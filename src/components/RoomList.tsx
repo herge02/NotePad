@@ -1,9 +1,9 @@
 "use client";
 
-// Module « Relevé par pièce » : liste répétable de pièces. Le type de pièce
-// détermine les champs spécifiques (roomSchemas). Les listes de revêtements
-// réutilisent celles de la section « Finition intérieure » (schéma DRY).
-// On documente présence, matériau, quantité, dimension — jamais l'état.
+// Module « Relevé par pièce », version compacte : chaque pièce est une carte
+// repliable fine (nom, type, aire) ; ouverte, elle expose les champs communs
+// en grille serrée, les revêtements (listes DRY de la section 8) et les champs
+// spécifiques au type. On documente présence/matériau/quantité/dimension.
 
 import { useState } from "react";
 import FormRenderer from "./FormRenderer";
@@ -15,6 +15,7 @@ import {
   getRoomSchema,
 } from "@/lib/formSchema";
 import { uid } from "@/lib/uid";
+import { btnDanger, btnGhost, btnPrimary, btnSubtle, inputSmCls, labelCls } from "./ui";
 import type { FieldValue, FloorData, FormField, RoomData } from "@/lib/types";
 
 export interface RoomListProps {
@@ -22,10 +23,6 @@ export interface RoomListProps {
   floors: FloorData[];
   onChange: (rooms: RoomData[]) => void;
 }
-
-const cellInput =
-  "w-full min-h-[44px] rounded-lg border border-neutral-300 bg-white px-2 text-base " +
-  "dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100";
 
 // champs communs « revêtements » construits à partir des listes partagées
 const FINISH_FIELDS: FormField[] = [
@@ -39,6 +36,7 @@ function RoomCard({
   floors,
   index,
   count,
+  defaultOpen,
   onUpdate,
   onDuplicate,
   onRemove,
@@ -48,13 +46,15 @@ function RoomCard({
   floors: FloorData[];
   index: number;
   count: number;
+  defaultOpen: boolean;
   onUpdate: (patch: Partial<RoomData>) => void;
   onDuplicate: () => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const schema = getRoomSchema(room.type);
+  const floorLabel = floors.find((f) => f.id === room.floorId)?.label;
 
   const setDim = (key: "width" | "depth" | "area", raw: string) => {
     const num = raw === "" ? undefined : Number(raw);
@@ -77,65 +77,54 @@ function RoomCard({
   };
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-800">
-      <div className="flex items-center gap-2 p-3">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="flex min-h-[44px] flex-1 items-center gap-2 text-left"
-        >
-          <span className="text-lg">{open ? "▾" : "▸"}</span>
-          <span className="text-base font-semibold text-neutral-800 dark:text-neutral-100">
+    <div className="rounded-md border border-slate-900/10 bg-white dark:border-slate-100/10 dark:bg-slate-900">
+      <div className="flex min-h-[44px] items-center gap-1 px-2 py-1">
+        <button type="button" onClick={() => setOpen(!open)} className="flex min-h-[36px] flex-1 items-center gap-2 text-left">
+          <svg
+            className={`h-4 w-4 flex-none text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="M5 8l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
             {room.label || schema?.label || "Pièce"}
           </span>
-          <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-700 dark:text-neutral-300">
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
             {schema?.label}
           </span>
-          {room.area !== undefined && (
-            <span className="text-sm text-neutral-500">{room.area} pi²</span>
-          )}
+          <span className="hidden text-xs text-slate-400 sm:inline">
+            {[floorLabel, room.area !== undefined ? `${room.area} pi²` : null].filter(Boolean).join(" · ")}
+          </span>
         </button>
-        <button
-          type="button"
-          onClick={() => onMove(-1)}
-          disabled={index === 0}
-          className="min-h-[44px] w-11 rounded-xl border border-neutral-300 text-lg disabled:opacity-30 dark:border-neutral-600 dark:text-neutral-200"
-          aria-label="Monter"
-        >
+        <button type="button" className={btnGhost} onClick={() => onMove(-1)} disabled={index === 0} aria-label="Monter">
           ↑
         </button>
         <button
           type="button"
+          className={btnGhost}
           onClick={() => onMove(1)}
           disabled={index === count - 1}
-          className="min-h-[44px] w-11 rounded-xl border border-neutral-300 text-lg disabled:opacity-30 dark:border-neutral-600 dark:text-neutral-200"
           aria-label="Descendre"
         >
           ↓
         </button>
-        <button
-          type="button"
-          onClick={onDuplicate}
-          className="min-h-[44px] rounded-xl border border-neutral-300 px-3 text-sm dark:border-neutral-600 dark:text-neutral-200"
-        >
-          Dupliquer
+        <button type="button" className={btnGhost} onClick={onDuplicate} title="Dupliquer">
+          ⧉
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="min-h-[44px] rounded-xl border border-red-300 px-3 text-sm text-red-600 dark:border-red-800"
-        >
-          Supprimer
+        <button type="button" className={btnDanger} onClick={onRemove} title="Supprimer">
+          ✕
         </button>
       </div>
 
       {open && (
-        <div className="space-y-5 border-t border-neutral-100 p-4 dark:border-neutral-700">
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Type de pièce</span>
+        <div className="space-y-4 border-t border-slate-100 px-3 pb-4 pt-3 dark:border-slate-800">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-6">
+            <label className="col-span-2 flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Type de pièce</span>
               <select
-                className={cellInput}
+                className={inputSmCls}
                 value={room.type}
                 onChange={(e) => onUpdate({ type: e.target.value, specific: {} })}
               >
@@ -146,24 +135,24 @@ function RoomCard({
                 ))}
               </select>
             </label>
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Nom / libellé</span>
+            <label className="col-span-2 flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Nom / libellé</span>
               <input
                 type="text"
-                className={cellInput}
+                className={inputSmCls}
                 placeholder="ex. Chambre principale"
                 value={room.label}
                 onChange={(e) => onUpdate({ label: e.target.value })}
               />
             </label>
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Étage rattaché</span>
+            <label className="col-span-2 flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Étage</span>
               <select
-                className={cellInput}
+                className={inputSmCls}
                 value={room.floorId ?? ""}
                 onChange={(e) => onUpdate({ floorId: e.target.value || undefined })}
               >
-                <option value="">— Choisir —</option>
+                <option value="">—</option>
                 {floors.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.label}
@@ -171,32 +160,32 @@ function RoomCard({
                 ))}
               </select>
             </label>
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Largeur (pi)</span>
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Largeur (pi)</span>
               <input
                 type="number"
                 inputMode="decimal"
-                className={cellInput}
+                className={inputSmCls}
                 value={room.width ?? ""}
                 onChange={(e) => setDim("width", e.target.value)}
               />
             </label>
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Profondeur (pi)</span>
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Profondeur (pi)</span>
               <input
                 type="number"
                 inputMode="decimal"
-                className={cellInput}
+                className={inputSmCls}
                 value={room.depth ?? ""}
                 onChange={(e) => setDim("depth", e.target.value)}
               />
             </label>
-            <label>
-              <span className="text-xs font-medium text-neutral-500">Aire (pi²) — auto si L×P</span>
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className={labelCls}>Aire (pi²) — auto L×P</span>
               <input
                 type="number"
                 inputMode="decimal"
-                className={cellInput}
+                className={inputSmCls}
                 value={room.area ?? ""}
                 onChange={(e) => setDim("area", e.target.value)}
               />
@@ -210,10 +199,10 @@ function RoomCard({
           />
 
           {schema && schema.fields.length > 0 && (
-            <div className="rounded-2xl bg-neutral-50 p-4 dark:bg-neutral-900/50">
-              <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                Champs spécifiques — {schema.label}
-              </h4>
+            <div className="rounded border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {schema.label}
+              </div>
               <FormRenderer
                 fields={schema.fields}
                 values={room.specific as Record<string, FieldValue>}
@@ -222,16 +211,15 @@ function RoomCard({
             </div>
           )}
 
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500">Notes</span>
+          <label className="flex flex-col gap-1">
+            <span className={labelCls}>Notes</span>
             <textarea
-              className={`${cellInput} min-h-[72px]`}
+              className={`${inputSmCls} min-h-[56px] w-full`}
+              rows={2}
               value={room.notes ?? ""}
               onChange={(e) => onUpdate({ notes: e.target.value || undefined })}
             />
           </label>
-
-          <p className="text-xs text-neutral-400">Photos par pièce : prévues dans une version future.</p>
         </div>
       )}
     </div>
@@ -240,14 +228,16 @@ function RoomCard({
 
 export default function RoomList({ rooms, floors, onChange }: RoomListProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [lastAddedId, setLastAddedId] = useState<string | null>(null);
 
   const add = (typeId: string) => {
     const schema = getRoomSchema(typeId);
     const count = rooms.filter((r) => r.type === typeId).length;
+    const id = uid();
     onChange([
       ...rooms,
       {
-        id: uid(),
+        id,
         type: typeId,
         label: count > 0 ? `${schema?.label ?? typeId} ${count + 1}` : schema?.label ?? typeId,
         floorFinishes: [],
@@ -256,6 +246,7 @@ export default function RoomList({ rooms, floors, onChange }: RoomListProps) {
         specific: {},
       },
     ]);
+    setLastAddedId(id);
     setPickerOpen(false);
   };
 
@@ -290,34 +281,20 @@ export default function RoomList({ rooms, floors, onChange }: RoomListProps) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-neutral-800 dark:text-neutral-100">
-            Pièces ({rooms.length})
-          </h3>
-          <p className="text-xs text-neutral-500">
-            Complète le relevé par étage — présence, matériau, quantité, dimension seulement.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setPickerOpen(!pickerOpen)}
-          className="min-h-[44px] rounded-xl bg-blue-600 px-4 font-semibold text-white"
-        >
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-slate-500">
+          {rooms.length} pièce{rooms.length > 1 ? "s" : ""} — complète le relevé par étage.
+        </span>
+        <button type="button" onClick={() => setPickerOpen(!pickerOpen)} className={btnPrimary}>
           + Ajouter une pièce
         </button>
       </div>
 
       {pickerOpen && (
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+        <div className="flex flex-wrap gap-1.5 rounded border border-blue-200 bg-blue-50 p-2 dark:border-blue-900 dark:bg-blue-950">
           {ROOM_SCHEMAS.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => add(r.id)}
-              className="min-h-[44px] rounded-xl border border-neutral-300 bg-white px-4 text-base dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-            >
+            <button key={r.id} type="button" onClick={() => add(r.id)} className={btnSubtle}>
               {r.label}
             </button>
           ))}
@@ -325,13 +302,13 @@ export default function RoomList({ rooms, floors, onChange }: RoomListProps) {
       )}
 
       {rooms.length === 0 && !pickerOpen && (
-        <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500 dark:border-neutral-600">
-          Aucune pièce relevée. Touchez « Ajouter une pièce » puis choisissez le type — le formulaire
-          affiche automatiquement les champs propres à l'usage de la pièce.
+        <p className="rounded border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-600">
+          Aucune pièce. « Ajouter une pièce » puis choisir le type — les champs propres à l'usage
+          s'affichent automatiquement.
         </p>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {rooms.map((room, idx) => (
           <RoomCard
             key={room.id}
@@ -339,6 +316,7 @@ export default function RoomList({ rooms, floors, onChange }: RoomListProps) {
             floors={floors}
             index={idx}
             count={rooms.length}
+            defaultOpen={room.id === lastAddedId}
             onUpdate={(patch) => update(room.id, patch)}
             onDuplicate={() => duplicate(room)}
             onRemove={() => remove(room.id)}

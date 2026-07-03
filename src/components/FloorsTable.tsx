@@ -1,11 +1,11 @@
 "use client";
 
 // Tableau dynamique d'étages — source de vérité pour toutes les matrices par
-// étage. Ajout, duplication, suppression, réordonnancement, inclusion dans
-// l'aire totale.
+// étage. Tableau compact : une ligne par niveau.
 
 import { uid } from "@/lib/uid";
 import { FLOOR_TYPES, type FloorData, type FloorType } from "@/lib/types";
+import { btnDanger, btnGhost, btnPrimary, checkCls, inputSmCls } from "./ui";
 
 export interface FloorsTableProps {
   floors: FloorData[];
@@ -16,10 +16,6 @@ function defaultLabel(type: FloorType, floors: FloorData[]): string {
   const count = floors.filter((f) => f.type === type).length;
   return count > 0 ? `${type} ${count + 1}` : type;
 }
-
-const cellInput =
-  "w-full min-h-[44px] rounded-lg border border-neutral-300 bg-white px-2 text-base " +
-  "dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100";
 
 export function totalIncludedArea(floors: FloorData[]): number {
   return floors.filter((f) => f.included).reduce((acc, f) => acc + (Number(f.area) || 0), 0);
@@ -40,9 +36,8 @@ export default function FloorsTable({ floors, onChange }: FloorsTableProps) {
 
   const duplicate = (floor: FloorData) => {
     const idx = floors.indexOf(floor);
-    const copy: FloorData = { ...floor, id: uid(), label: `${floor.label} (copie)` };
     const next = [...floors];
-    next.splice(idx + 1, 0, copy);
+    next.splice(idx + 1, 0, { ...floor, id: uid(), label: `${floor.label} (copie)` });
     onChange(next);
   };
 
@@ -58,154 +53,139 @@ export default function FloorsTable({ floors, onChange }: FloorsTableProps) {
     onChange(next);
   };
 
+  const num = (v: number | undefined) => (v === undefined ? "" : String(v));
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-neutral-800 dark:text-neutral-100">
-          Étages ({floors.length})
-        </h3>
-        <button
-          type="button"
-          onClick={add}
-          className="min-h-[44px] rounded-xl bg-blue-600 px-4 font-semibold text-white"
-        >
-          + Ajouter un étage
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Étages ({floors.length}) — alimentent les matrices par étage et le relevé par pièce
+        </span>
+        <button type="button" onClick={add} className={btnPrimary}>
+          + Étage
         </button>
       </div>
 
-      {floors.length === 0 && (
-        <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500 dark:border-neutral-600">
-          Ajoutez les étages du bâtiment — ils alimentent toutes les matrices par étage
-          (planchers, revêtements, finition intérieure) et le module par pièce.
+      {floors.length === 0 ? (
+        <p className="rounded border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-600">
+          Aucun étage. Ajoutez les niveaux du bâtiment (sous-sol, rez-de-chaussée, étages…).
         </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs text-slate-500 dark:border-slate-700">
+                <th className="pb-1 pr-2 font-medium">Type</th>
+                <th className="pb-1 pr-2 font-medium">Libellé</th>
+                <th className="pb-1 pr-2 font-medium">Aire (pi²)</th>
+                <th className="pb-1 pr-2 font-medium">Périm. (pi)</th>
+                <th className="pb-1 pr-2 font-medium">Haut. (pi)</th>
+                <th className="pb-1 pr-2 text-center font-medium" title="Inclure dans l'aire totale">
+                  Incl.
+                </th>
+                <th className="pb-1" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {floors.map((floor, idx) => (
+                <tr key={floor.id}>
+                  <td className="py-1 pr-2">
+                    <select
+                      className={`${inputSmCls} w-full min-w-[130px]`}
+                      value={floor.type}
+                      onChange={(e) => update(floor.id, { type: e.target.value as FloorType })}
+                    >
+                      {FLOOR_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="text"
+                      className={`${inputSmCls} w-full min-w-[110px]`}
+                      value={floor.label}
+                      onChange={(e) => update(floor.id, { label: e.target.value })}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      className={`${inputSmCls} w-24`}
+                      value={num(floor.area)}
+                      onChange={(e) =>
+                        update(floor.id, { area: e.target.value === "" ? undefined : Number(e.target.value) })
+                      }
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      className={`${inputSmCls} w-20`}
+                      value={num(floor.perimeter)}
+                      onChange={(e) =>
+                        update(floor.id, { perimeter: e.target.value === "" ? undefined : Number(e.target.value) })
+                      }
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      className={`${inputSmCls} w-20`}
+                      value={num(floor.height)}
+                      onChange={(e) =>
+                        update(floor.id, { height: e.target.value === "" ? undefined : Number(e.target.value) })
+                      }
+                    />
+                  </td>
+                  <td className="py-1 pr-2 text-center">
+                    <input
+                      type="checkbox"
+                      className={checkCls}
+                      checked={floor.included}
+                      onChange={(e) => update(floor.id, { included: e.target.checked })}
+                      aria-label="Inclure dans l'aire totale"
+                    />
+                  </td>
+                  <td className="whitespace-nowrap py-1 text-right">
+                    <button type="button" className={btnGhost} onClick={() => move(floor.id, -1)} disabled={idx === 0} aria-label="Monter">
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className={btnGhost}
+                      onClick={() => move(floor.id, 1)}
+                      disabled={idx === floors.length - 1}
+                      aria-label="Descendre"
+                    >
+                      ↓
+                    </button>
+                    <button type="button" className={btnGhost} onClick={() => duplicate(floor)} aria-label="Dupliquer" title="Dupliquer">
+                      ⧉
+                    </button>
+                    <button type="button" className={btnDanger} onClick={() => remove(floor.id)} aria-label="Supprimer" title="Supprimer">
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      <div className="space-y-2">
-        {floors.map((floor, idx) => (
-          <div
-            key={floor.id}
-            className="rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-800"
-          >
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <label className="col-span-2 md:col-span-1">
-                <span className="text-xs font-medium text-neutral-500">Type d'étage</span>
-                <select
-                  className={cellInput}
-                  value={floor.type}
-                  onChange={(e) => {
-                    const type = e.target.value as FloorType;
-                    update(floor.id, { type, label: floor.label || type });
-                  }}
-                >
-                  {FLOOR_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="col-span-2 md:col-span-1">
-                <span className="text-xs font-medium text-neutral-500">Libellé</span>
-                <input
-                  type="text"
-                  className={cellInput}
-                  value={floor.label}
-                  onChange={(e) => update(floor.id, { label: e.target.value })}
-                />
-              </label>
-              <label>
-                <span className="text-xs font-medium text-neutral-500">Aire (pi²)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  className={cellInput}
-                  value={floor.area ?? ""}
-                  onChange={(e) =>
-                    update(floor.id, { area: e.target.value === "" ? undefined : Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                <span className="text-xs font-medium text-neutral-500">Périmètre au sol (pi)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  className={cellInput}
-                  value={floor.perimeter ?? ""}
-                  onChange={(e) =>
-                    update(floor.id, { perimeter: e.target.value === "" ? undefined : Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                <span className="text-xs font-medium text-neutral-500">Hauteur ext. (pi)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  className={cellInput}
-                  value={floor.height ?? ""}
-                  onChange={(e) =>
-                    update(floor.id, { height: e.target.value === "" ? undefined : Number(e.target.value) })
-                  }
-                />
-              </label>
-              <div className="col-span-2 flex items-end gap-2 md:col-span-3">
-                <button
-                  type="button"
-                  onClick={() => update(floor.id, { included: !floor.included })}
-                  className={`min-h-[44px] flex-1 rounded-xl border px-3 text-sm font-medium ${
-                    floor.included
-                      ? "border-green-600 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                      : "border-neutral-300 bg-white text-neutral-500 dark:border-neutral-600 dark:bg-neutral-800"
-                  }`}
-                >
-                  {floor.included ? "✓ Incluse dans l'aire totale" : "Exclue de l'aire totale"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(floor.id, -1)}
-                  disabled={idx === 0}
-                  className="min-h-[44px] w-11 rounded-xl border border-neutral-300 text-lg disabled:opacity-30 dark:border-neutral-600 dark:text-neutral-200"
-                  aria-label="Monter"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(floor.id, 1)}
-                  disabled={idx === floors.length - 1}
-                  className="min-h-[44px] w-11 rounded-xl border border-neutral-300 text-lg disabled:opacity-30 dark:border-neutral-600 dark:text-neutral-200"
-                  aria-label="Descendre"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => duplicate(floor)}
-                  className="min-h-[44px] rounded-xl border border-neutral-300 px-3 text-sm dark:border-neutral-600 dark:text-neutral-200"
-                >
-                  Dupliquer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(floor.id)}
-                  className="min-h-[44px] rounded-xl border border-red-300 px-3 text-sm text-red-600 dark:border-red-800"
-                >
-                  Supprimer
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {floors.length > 0 && (
-        <div className="flex flex-wrap gap-4 rounded-2xl bg-neutral-100 p-4 text-sm dark:bg-neutral-800">
-          <span className="font-semibold text-neutral-800 dark:text-neutral-100">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="font-semibold text-slate-900 dark:text-slate-100">
             Aire totale (incluse) : {totalIncludedArea(floors).toLocaleString("fr-CA")} pi²
           </span>
           {mezzanineArea(floors) > 0 && (
-            <span className="text-neutral-600 dark:text-neutral-300">
+            <span className="text-slate-600 dark:text-slate-300">
               Aire mezzanine : {mezzanineArea(floors).toLocaleString("fr-CA")} pi²
             </span>
           )}

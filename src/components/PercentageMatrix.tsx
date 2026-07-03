@@ -1,11 +1,12 @@
 "use client";
 
-// Matrice de composition par étage : pour chaque étage défini dans l'onglet
-// « Dimensions », on ajoute des options (avec recherche) et un pourcentage.
-// Validation : la somme par étage ne doit pas dépasser 100 %.
+// Matrice de composition par étage, version compacte : chaque étage est un
+// bloc fin avec ses matériaux (ligne = matériau + %), recherche pour ajouter.
+// Somme par étage validée ≤ 100 %.
 
 import { useState } from "react";
 import { OTHER_OPTION } from "@/lib/formSchema";
+import { btnDanger, inputSmCls } from "./ui";
 import type { FloorData, MatrixDef } from "@/lib/types";
 
 export interface PercentageMatrixProps {
@@ -37,42 +38,35 @@ function FloorMatrix({
   const over = matrix.validateSum !== false && sum > 100;
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-800">
-      <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-base font-semibold text-neutral-800 dark:text-neutral-100">{floor.label}</h4>
-        <span className={`text-sm font-medium ${over ? "text-red-600" : "text-neutral-500"}`}>
+    <div className="rounded border border-slate-200 p-2.5 dark:border-slate-700">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{floor.label}</span>
+        <span className={`text-xs font-medium ${over ? "text-red-600" : "text-slate-500"}`}>
           {sum} %{over && " ⚠︎"}
         </span>
       </div>
 
       {selected.length > 0 && (
-        <div className="mb-3 space-y-1.5">
+        <div className="mb-2 divide-y divide-slate-100 dark:divide-slate-800">
           {selected.map((opt) => (
-            <div
-              key={opt}
-              className="flex min-h-[44px] items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 dark:border-blue-800 dark:bg-blue-950"
-            >
-              <span className="flex-1 text-base text-neutral-800 dark:text-neutral-100">{opt}</span>
+            <div key={opt} className="flex min-h-[34px] items-center gap-1.5 py-0.5">
+              <span className="flex-1 truncate text-sm text-slate-700 dark:text-slate-300">{opt}</span>
               <input
                 type="number"
                 inputMode="numeric"
                 min={0}
                 max={100}
-                className="w-20 min-h-[40px] rounded-lg border border-neutral-300 bg-white px-2 text-right text-base dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                className={`${inputSmCls} w-16 text-right`}
                 value={values[opt] ?? ""}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  onChange(
-                    floor.id,
-                    opt,
-                    raw === "" ? 0 : Math.max(0, Math.min(100, Number(raw)))
-                  );
+                  onChange(floor.id, opt, raw === "" ? 0 : Math.max(0, Math.min(100, Number(raw))));
                 }}
               />
-              <span className="text-sm text-neutral-500">%</span>
+              <span className="text-xs text-slate-400">%</span>
               <button
                 type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-lg text-red-500"
+                className={btnDanger}
                 onClick={() => onChange(floor.id, opt, undefined)}
                 aria-label={`Retirer ${opt}`}
               >
@@ -85,17 +79,17 @@ function FloorMatrix({
 
       <input
         type="search"
-        className="mb-2 w-full min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-base dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-        placeholder="Rechercher un matériau à ajouter…"
+        className={`${inputSmCls} mb-1.5 w-full`}
+        placeholder="Ajouter un matériau…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <div className="flex flex-wrap gap-1.5">
-        {available.map((opt) => (
+      <div className="flex flex-wrap gap-1">
+        {available.slice(0, search ? available.length : 8).map((opt) => (
           <button
             key={opt}
             type="button"
-            className="min-h-[40px] rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
+            className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-900/5 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-100/10"
             onClick={() => {
               onChange(floor.id, opt, 0);
               setSearch("");
@@ -104,8 +98,9 @@ function FloorMatrix({
             + {opt}
           </button>
         ))}
-        {available.length === 0 && (
-          <span className="text-sm text-neutral-400">Aucune option correspondante.</span>
+        {available.length === 0 && <span className="text-xs text-slate-400">Aucune option correspondante.</span>}
+        {!search && available.length > 8 && (
+          <span className="self-center text-xs text-slate-400">… tapez pour chercher</span>
         )}
       </div>
     </div>
@@ -114,18 +109,18 @@ function FloorMatrix({
 
 export default function PercentageMatrix({ matrix, floors, values, onChange }: PercentageMatrixProps) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div>
-        <h3 className="text-base font-semibold text-neutral-800 dark:text-neutral-100">{matrix.title}</h3>
-        {matrix.help && <p className="text-xs text-neutral-500">{matrix.help}</p>}
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{matrix.title}</span>
+        {matrix.help && <p className="text-xs text-slate-500">{matrix.help}</p>}
       </div>
       {floors.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500 dark:border-neutral-600">
-          Aucun étage défini. Ajoutez d'abord les étages dans l'onglet « Dimensions » — les matrices se
-          génèrent automatiquement à partir de ceux-ci.
+        <p className="rounded border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-600">
+          Aucun étage défini — ajoutez-les à la section « Dimensions », les matrices se génèrent
+          automatiquement.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           {floors.map((floor) => (
             <FloorMatrix
               key={floor.id}

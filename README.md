@@ -19,9 +19,17 @@ npm run dev        # développement — http://localhost:3000
 npm run build && npm start   # production (le service worker hors ligne s'active en prod)
 ```
 
+## Interface
+
+UI/UX inspirée de SPE-NotePad : barre du haut fixe, **sidebar de navigation
+repliable** (groupes → sections, pastilles de progression), canevas central où
+les 14 sections s'enchaînent en **sections repliables** (flow continu, on
+remplit de haut en bas), barre de statut en bas (sauvegarde, aire totale,
+pièces). Contrôles natifs compacts, grilles multi-colonnes, tableaux fins.
+
 ## Organisation du formulaire
 
-Navigation à deux niveaux (groupes → sections), du sol vers le haut :
+Groupes → sections, du sol vers le haut :
 
 | Groupe | Sections |
 |---|---|
@@ -57,7 +65,9 @@ src/lib/fieldLogic.ts        visibilité conditionnelle, progression, sommes %
 src/lib/storage.ts           IndexedDB + repli localStorage
 src/lib/export.ts            export JSON / CSV
 src/components/FormRenderer.tsx      rendu générique des champs (schema-driven)
-src/components/SectionTabs.tsx       navigation deux niveaux, sticky, progression
+src/components/Sidebar.tsx           navigation groupes → sections, progression
+src/components/CollapsibleSection.tsx sections repliables animées (flow)
+src/components/ui.ts                 classes utilitaires partagées (style compact)
 src/components/PercentageMatrix.tsx  matrices par étage (recherche + %)
 src/components/FloorsTable.tsx       tableau d'étages (source des matrices)
 src/components/RoomList.tsx          module par pièce (ajout/duplication/réordonnancement)
