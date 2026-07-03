@@ -1,0 +1,19 @@
+{
+  "name": "Relevé de bâtiment",
+  "short_name": "Relevé",
+  "description": "Relevé de valeur assurable / inspection bâtiment — formulaire terrain iPad",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f5f5",
+  "theme_color": "#2563eb",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
