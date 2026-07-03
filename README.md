@@ -47,7 +47,20 @@ Refonte complète documentée dans `docs/REFONTE-UX.md` (diagnostic, wireframes,
 - **Validation près du champ**, non bloquante (requis au blur, bornes numériques).
 - **Vérification** : uniquement anomalies, requis manquants, questions sans
   réponse et modules jamais ouverts (acquittables « Sans objet »), totaux,
-  export JSON/CSV (averti, jamais interdit).
+  exports (avertis, jamais interdits).
+
+## Export Excel : le formulaire original rempli
+
+« Exporter Excel (.xlsm) » remplit **le fichier Excel d'origine**
+(`public/modele_releve.xlsm`, copie de « Feuille relevé B.xlsm ») cellule par
+cellule : « X » dans les colonnes à cocher (A/C/E/G/I/K/M/O), quantités dans
+les parenthèses, pourcentages dans les matrices par étage, aires du tableau
+Superficie, rénovations, piscine/SPA/clôture… La modification se fait au
+niveau XML (JSZip) : styles, cellules fusionnées, formules **et macro VBA**
+sont intégralement préservés — le téléchargement reste un `.xlsm` fonctionnel.
+Cartographie des cellules : `src/lib/excelMap.ts` ; moteur : `src/lib/exportExcel.ts`.
+Ce qui n'a pas de place dans le formulaire papier (relevé par pièce, notes
+détaillées) va dans la zone Notes de la feuille et reste complet dans le JSON/CSV.
 
 ## Architecture
 

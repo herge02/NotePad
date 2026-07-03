@@ -16,7 +16,9 @@ import {
   totalIncludedArea,
 } from "@/lib/fieldLogic";
 import { exportCSV, exportJSON } from "@/lib/export";
+import { exportExcelTemplate } from "@/lib/exportExcel";
 import { btnPrimary, btnSubtle } from "./ui";
+import { useState } from "react";
 import type { ReleveData } from "@/lib/types";
 
 export interface ReviewScreenProps {
@@ -26,6 +28,7 @@ export interface ReviewScreenProps {
 }
 
 export default function ReviewScreen({ releve, onGoto, onMarkNa }: ReviewScreenProps) {
+  const [excelState, setExcelState] = useState<"idle" | "busy" | "error">("idle");
   const anomalies = allAnomalies(releve);
   const missing = MODULES.flatMap((m) =>
     missingRequired(m, releve)
@@ -186,13 +189,35 @@ export default function ReviewScreen({ releve, onGoto, onMarkNa }: ReviewScreenP
 
       {/* Export */}
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-        <button type="button" onClick={() => confirmExport(() => exportJSON(releve))} className={btnPrimary}>
-          Exporter JSON
+        <button
+          type="button"
+          disabled={excelState === "busy"}
+          onClick={() =>
+            confirmExport(async () => {
+              setExcelState("busy");
+              try {
+                await exportExcelTemplate(releve);
+                setExcelState("idle");
+              } catch {
+                setExcelState("error");
+              }
+            })
+          }
+          className={btnPrimary}
+        >
+          {excelState === "busy" ? "Génération…" : "Exporter Excel (.xlsm)"}
+        </button>
+        <button type="button" onClick={() => confirmExport(() => exportJSON(releve))} className={btnSubtle}>
+          JSON
         </button>
         <button type="button" onClick={() => confirmExport(() => exportCSV(releve))} className={btnSubtle}>
-          Exporter CSV
+          CSV
         </button>
-        <span className="text-xs text-slate-400">Réf. : {releve.reference || "—"}</span>
+        <span className="text-xs text-slate-400">
+          {excelState === "error"
+            ? "Erreur lors de la génération Excel."
+            : `Réf. : ${releve.reference || "—"} · l'Excel est le formulaire original rempli (macro conservée).`}
+        </span>
       </div>
     </div>
   );

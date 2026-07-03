@@ -2,10 +2,16 @@
 // pour les pages, afin de fonctionner entièrement hors ligne après la
 // première visite.
 
-const CACHE = "releve-batiment-v1";
+const CACHE = "releve-batiment-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.json", "/icon.svg"])));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) =>
+        cache.addAll(["/", "/manifest.json", "/icon.svg", "/modele_releve.xlsm"])
+      )
+  );
   self.skipWaiting();
 });
 
