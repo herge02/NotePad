@@ -1,7 +1,7 @@
 // Export JSON / CSV d'un relevé. L'export PDF imprimable pourra s'appuyer sur
 // la même structure aplatie plus tard.
 
-import { SECTIONS, getRoomSchema } from "./formSchema";
+import { MODULES, getRoomSchema } from "./formSchema";
 import type {
   DimsItem,
   FormField,
@@ -107,7 +107,7 @@ export function toCSV(releve: ReleveData): string {
   const floorLabel = (floorId: string) =>
     releve.floors.find((f) => f.id === floorId)?.label ?? floorId;
 
-  for (const section of SECTIONS) {
+  for (const section of MODULES) {
     for (const field of section.fields ?? []) {
       flattenFieldValue(field, releve.values[field.id], rows, section.title);
       const autre = releve.values[`${field.id}__autre`];

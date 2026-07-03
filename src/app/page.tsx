@@ -1,43 +1,51 @@
 "use client";
 
-// Application principale — layout inspiré de SPE-NotePad : barre du haut fixe,
-// sidebar de navigation repliable, canevas central où toutes les sections
-// s'enchaînent en sections repliables (flow continu), barre de statut en bas.
-// État du relevé, autosave IndexedDB, brouillons, mode sombre, export.
+// Application principale — flux guidé : Mes relevés → hub de phases/modules →
+// écrans de saisie focalisés (une tâche à la fois) → vérification & export.
+// Autosave IndexedDB, hors ligne, mode sombre.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CollapsibleSection from "@/components/CollapsibleSection";
-import FloorsTable, { totalIncludedArea } from "@/components/FloorsTable";
-import FormRenderer from "@/components/FormRenderer";
-import PercentageMatrix from "@/components/PercentageMatrix";
-import RepeatableList from "@/components/RepeatableList";
-import RoomList from "@/components/RoomList";
-import Sidebar from "@/components/Sidebar";
-import SummarySection from "@/components/SummarySection";
-import { btnGhost, btnSubtle } from "@/components/ui";
-import type { SectionProgress } from "@/components/types";
-import { SECTIONS } from "@/lib/formSchema";
-import { sectionStarted } from "@/lib/fieldLogic";
-import { exportCSV, exportJSON } from "@/lib/export";
+import ModuleHub from "@/components/ModuleHub";
+import ModuleScreen from "@/components/ModuleScreen";
+import PhaseStepper from "@/components/PhaseStepper";
+import ReleveList from "@/components/ReleveList";
+import { btnGhost } from "@/components/ui";
+import { MODULES, PHASES, getModule } from "@/lib/formSchema";
+import {
+  moduleStatus,
+  navigableModules,
+  phaseStatus,
+} from "@/lib/fieldLogic";
+import { getLast } from "@/lib/lastUsed";
 import {
   deleteReleve,
   getActiveId,
-  listReleves,
+  listRelevesFull,
   loadReleve,
   saveReleve,
   setActiveId,
 } from "@/lib/storage";
 import { uid } from "@/lib/uid";
-import type { FieldValue, FormSection, ReleveData, ReleveMeta } from "@/lib/types";
+import type { FieldValue, ModuleDef, Phase, ReleveData } from "@/lib/types";
 
 function newReleve(): ReleveData {
   const now = new Date().toISOString();
+  const values: Record<string, FieldValue> = { date_releve: now.slice(0, 10) };
+  // préremplissage « dernier choix utilisé »
+  for (const m of MODULES) {
+    for (const f of m.fields ?? []) {
+      if (f.rememberLast) {
+        const last = getLast(f.id);
+        if (last) values[f.id] = last;
+      }
+    }
+  }
   return {
     id: uid(),
     reference: "",
     createdAt: now,
     updatedAt: now,
-    values: { date_releve: now.slice(0, 10) },
+    values,
     floors: [],
     rooms: [],
     renovations: [],
@@ -52,40 +60,34 @@ function computeReference(releve: ReleveData): string {
   return `${dossier}_${date}`;
 }
 
+type View = { kind: "list" } | { kind: "hub" } | { kind: "module"; id: string };
+
 export default function Home() {
   const [releve, setReleve] = useState<ReleveData | null>(null);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ dossier: true });
-  const [activeSectionId, setActiveSectionId] = useState(SECTIONS[0].id);
-  const [drafts, setDrafts] = useState<ReleveMeta[]>([]);
+  const [view, setView] = useState<View>({ kind: "list" });
+  const [activePhase, setActivePhase] = useState<Phase>(1);
+  const [allReleves, setAllReleves] = useState<ReleveData[]>([]);
   const [dark, setDark] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "idle">("idle");
-  const [draftsOpen, setDraftsOpen] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isDesktopRef = useRef(true);
 
-  // chargement initial : relevé actif ou nouveau
+  // chargement initial : reprendre le relevé actif, sinon la liste
   useEffect(() => {
     (async () => {
       const activeId = getActiveId();
       const existing = activeId ? await loadReleve(activeId) : undefined;
-      const r = existing ?? newReleve();
-      setReleve(r);
-      setActiveId(r.id);
-      setDrafts(await listReleves());
+      if (existing) {
+        setReleve(existing);
+        setView({ kind: "hub" });
+      }
+      setAllReleves(await listRelevesFull());
+      setLoaded(true);
     })();
     const storedDark = localStorage.getItem("releve-dark");
     setDark(
       storedDark !== null ? storedDark === "1" : window.matchMedia("(prefers-color-scheme: dark)").matches
     );
-    const mq = window.matchMedia("(min-width: 768px)");
-    isDesktopRef.current = mq.matches;
-    const onChange = (e: MediaQueryListEvent) => {
-      isDesktopRef.current = e.matches;
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
   }, []);
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export default function Home() {
     localStorage.setItem("releve-dark", dark ? "1" : "0");
   }, [dark]);
 
-  // autosave en continu (debounce court, adapté à la saisie terrain)
+  // autosave en continu (debounce court)
   const persist = useCallback(async (r: ReleveData) => {
     setSaveState("saving");
     await saveReleve(r);
@@ -134,6 +136,18 @@ export default function Home() {
     [applyChange]
   );
 
+  const setMatrixFloor = useCallback(
+    (matrixId: string, floorId: string, vals: Record<string, number>) =>
+      applyChange((prev) => {
+        const matrices = { ...prev.matrices };
+        const perFloor = { ...(matrices[matrixId] ?? {}) };
+        perFloor[floorId] = vals;
+        matrices[matrixId] = perFloor;
+        return { ...prev, matrices };
+      }),
+    [applyChange]
+  );
+
   const setMatrixValue = useCallback(
     (matrixId: string, floorId: string, option: string, pct: number | undefined) =>
       applyChange((prev) => {
@@ -152,254 +166,225 @@ export default function Home() {
     [applyChange]
   );
 
-  const startNew = async () => {
-    if (releve && !confirm("Commencer un nouveau relevé ? Le relevé actuel reste sauvegardé en brouillon.")) {
-      return;
-    }
-    if (releve) await persist(releve);
-    const r = newReleve();
-    setReleve(r);
-    setActiveId(r.id);
-    setOpenSections({ dossier: true });
-    setActiveSectionId(SECTIONS[0].id);
-    setDrafts(await listReleves());
-    setDraftsOpen(false);
-    window.scrollTo({ top: 0 });
-  };
+  // --- gestion des relevés --------------------------------------------------
+  const refreshList = useCallback(async () => setAllReleves(await listRelevesFull()), []);
 
-  const saveDraft = async () => {
-    if (!releve) return;
-    await persist(releve);
-    setDrafts(await listReleves());
-  };
-
-  const openDraft = async (id: string) => {
+  const openReleve = async (id: string) => {
     const r = await loadReleve(id);
     if (r) {
       setReleve(r);
       setActiveId(r.id);
-      setOpenSections({ dossier: true });
+      setActivePhase(1);
+      setView({ kind: "hub" });
+    }
+  };
+
+  const startNew = async () => {
+    if (releve) await persist(releve);
+    const r = newReleve();
+    setReleve(r);
+    setActiveId(r.id);
+    setActivePhase(1);
+    // droit à la première tâche : identifier le dossier
+    setView({ kind: "module", id: "identification" });
+    await persist(r);
+    await refreshList();
+  };
+
+  const duplicateReleve = async (id: string) => {
+    const src = await loadReleve(id);
+    if (!src) return;
+    const now = new Date().toISOString();
+    const copy: ReleveData = {
+      ...structuredClone(src),
+      id: uid(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    delete copy.values["no_dossier"];
+    copy.values["date_releve"] = now.slice(0, 10);
+    copy.reference = computeReference(copy);
+    await saveReleve(copy);
+    await refreshList();
+  };
+
+  const removeReleve = async (id: string) => {
+    if (!confirm("Supprimer définitivement ce relevé ?")) return;
+    await deleteReleve(id);
+    if (releve?.id === id) {
+      setReleve(null);
+      setView({ kind: "list" });
+    }
+    await refreshList();
+  };
+
+  const backToList = async () => {
+    if (releve) await persist(releve);
+    await refreshList();
+    setView({ kind: "list" });
+  };
+
+  // --- navigation entre modules ----------------------------------------------
+  const goto = (target: string) => {
+    if (target.startsWith("hub:")) {
+      setActivePhase(Number(target.slice(4)) as Phase);
+      setView({ kind: "hub" });
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    const m = getModule(target);
+    if (m) {
+      setActivePhase(m.phase);
+      setView({ kind: "module", id: m.id });
       window.scrollTo({ top: 0 });
     }
-    setDraftsOpen(false);
   };
 
-  const removeDraft = async (id: string) => {
-    if (!confirm("Supprimer définitivement ce brouillon ?")) return;
-    await deleteReleve(id);
-    setDrafts(await listReleves());
-    if (releve?.id === id) {
-      const r = newReleve();
-      setReleve(r);
-      setActiveId(r.id);
+  const openModule = (m: ModuleDef) => {
+    // ouvrir un opt-in vaut réponse « oui »
+    if (m.optIn && releve && releve.values[m.optIn.fieldId] !== "oui") {
+      setFieldValue(m.optIn.fieldId, "oui");
     }
+    goto(m.id);
   };
 
-  const selectSection = (id: string) => {
-    setActiveSectionId(id);
-    setOpenSections((prev) => ({ ...prev, [id]: true }));
-    setMobileSidebarOpen(false);
-    // laisse la section s'ouvrir avant de défiler
-    requestAnimationFrame(() => {
-      document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+  const answerOptIn = (m: ModuleDef, answer: "oui" | "non") => {
+    setFieldValue(m.optIn!.fieldId, answer);
+    if (answer === "oui") goto(m.id);
   };
 
-  const toggleMenu = () => {
-    if (isDesktopRef.current) {
-      setDesktopSidebarExpanded((v) => !v);
+  const reactivate = (m: ModuleDef) => {
+    if (m.optIn) {
+      setFieldValue(m.optIn.fieldId, "oui");
     } else {
-      setMobileSidebarOpen((v) => !v);
+      setFieldValue(`module_force_${m.id}`, "oui");
     }
+    setFieldValue(`module_na_${m.id}`, undefined);
+    goto(m.id);
   };
 
-  const progress = useMemo<Record<string, SectionProgress>>(() => {
-    const map: Record<string, SectionProgress> = {};
+  const phaseStatuses = useMemo(() => {
+    const map = {} as Record<Phase, ReturnType<typeof phaseStatus>>;
     if (releve) {
-      for (const s of SECTIONS) {
-        map[s.id] = sectionStarted(s, releve) ? "started" : "empty";
-      }
+      for (const p of PHASES) map[p.id] = phaseStatus(p.id, releve);
     }
     return map;
   }, [releve]);
 
-  if (!releve) {
+  if (!loaded) {
     return (
       <main className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        Chargement du relevé…
+        Chargement…
       </main>
     );
   }
 
-  const renderSection = (section: FormSection) => {
-    switch (section.special) {
-      case "floors":
-        return (
-          <div className="space-y-5">
-            {section.fields && (
-              <FormRenderer fields={section.fields} values={releve.values} onChange={setFieldValue} />
-            )}
-            <FloorsTable floors={releve.floors} onChange={(floors) => updateReleve({ floors })} />
-          </div>
-        );
-      case "rooms":
-        return (
-          <RoomList rooms={releve.rooms} floors={releve.floors} onChange={(rooms) => updateReleve({ rooms })} />
-        );
-      case "renovations":
-        return (
-          <RepeatableList
-            renovations={releve.renovations}
-            onChange={(renovations) => updateReleve({ renovations })}
-          />
-        );
-      case "summary":
-        return <SummarySection releve={releve} />;
-      default:
-        return (
-          <div className="space-y-5">
-            {section.fields && (
-              <FormRenderer fields={section.fields} values={releve.values} onChange={setFieldValue} />
-            )}
-            {section.matrices?.map((matrix) => (
-              <PercentageMatrix
-                key={matrix.id}
-                matrix={matrix}
-                floors={releve.floors}
-                values={releve.matrices[matrix.id] ?? {}}
-                onChange={(floorId, option, pct) => setMatrixValue(matrix.id, floorId, option, pct)}
-              />
-            ))}
-          </div>
-        );
-    }
-  };
+  // --- Écran 0 : Mes relevés --------------------------------------------------
+  if (view.kind === "list" || !releve) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-950">
+        <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-slate-900/10 bg-white/90 px-3 backdrop-blur dark:border-slate-100/10 dark:bg-slate-900/90">
+          <span className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Relevé de bâtiment — Mes relevés
+          </span>
+          <button type="button" className={btnGhost} onClick={() => setDark(!dark)} aria-label="Basculer le mode sombre">
+            {dark ? "☀︎" : "☾"}
+          </button>
+        </header>
+        <ReleveList
+          releves={allReleves}
+          onOpen={openReleve}
+          onNew={startNew}
+          onDuplicate={duplicateReleve}
+          onDelete={removeReleve}
+        />
+      </div>
+    );
+  }
 
-  const totalArea = totalIncludedArea(releve.floors);
+  // --- Coquille du relevé : topbar + stepper + contenu -------------------------
+  const currentModule = view.kind === "module" ? getModule(view.id) : undefined;
+  const nav = navigableModules(releve);
+  const idx = currentModule ? nav.findIndex((m) => m.id === currentModule.id) : -1;
+  const prevModule = idx > 0 ? nav[idx - 1] : undefined;
+  const nextModule = idx >= 0 && idx < nav.length - 1 ? nav[idx + 1] : undefined;
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-950">
-      {/* Barre du haut fixe */}
-      <header className="fixed inset-x-0 top-0 z-50 h-14 border-b border-slate-900/10 bg-white/90 backdrop-blur dark:border-slate-100/10 dark:bg-slate-900/90">
-        <div className="mx-auto flex h-full max-w-6xl items-center gap-2 px-3">
-          <button type="button" className={btnGhost} onClick={toggleMenu} aria-label="Ouvrir le menu">
-            ☰ Menu
+      <header className="sticky top-0 z-50 border-b border-slate-900/10 bg-white/90 backdrop-blur dark:border-slate-100/10 dark:bg-slate-900/90">
+        <div className="flex h-12 items-center gap-2 px-2">
+          <button type="button" className={btnGhost} onClick={backToList}>
+            ‹ Mes relevés
           </button>
-          <div className="min-w-0 flex-1">
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Relevé de bâtiment</span>
-            <span className="ml-2 hidden truncate text-xs text-slate-400 sm:inline">
-              {releve.reference || "nouveau"}
-            </span>
-          </div>
-          <span
-            className={`hidden text-xs sm:inline ${saveState === "saved" ? "text-green-600" : "text-slate-400"}`}
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-900 dark:text-slate-100"
+            onClick={() => setView({ kind: "hub" })}
           >
-            {saveState === "saving" ? "Sauvegarde…" : saveState === "saved" ? "✓ Sauvegardé" : ""}
-          </span>
-          <button type="button" className={btnSubtle} onClick={startNew}>
-            Nouveau
-          </button>
-          <button type="button" className={btnSubtle} onClick={saveDraft}>
-            Brouillon
-          </button>
-          <div className="relative">
-            <button type="button" className={btnSubtle} onClick={() => setDraftsOpen(!draftsOpen)} aria-expanded={draftsOpen}>
-              Relevés ({drafts.length})
-            </button>
-            {draftsOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-[min(360px,90vw)] rounded-md border border-slate-900/10 bg-white p-2 shadow-lg dark:border-slate-100/10 dark:bg-slate-900">
-                {drafts.length === 0 ? (
-                  <p className="px-2 py-1 text-sm text-slate-500">Aucun brouillon sauvegardé.</p>
-                ) : (
-                  <ul className="max-h-72 space-y-0.5 overflow-y-auto">
-                    {drafts.map((d) => (
-                      <li key={d.id} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openDraft(d.id)}
-                          className={`min-h-[40px] flex-1 truncate rounded-md px-2 text-left text-sm ${
-                            d.id === releve.id
-                              ? "bg-slate-900/5 font-medium text-slate-900 dark:bg-slate-100/10 dark:text-slate-100"
-                              : "text-slate-700 hover:bg-slate-900/5 dark:text-slate-300"
-                          }`}
-                        >
-                          {d.reference || "sans référence"}
-                          <span className="ml-2 text-xs text-slate-400">
-                            {new Date(d.updatedAt).toLocaleDateString("fr-CA")}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeDraft(d.id)}
-                          className="rounded-md px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                          aria-label="Supprimer ce brouillon"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-1 flex gap-1 border-t border-slate-100 pt-1 dark:border-slate-800">
-                  <button type="button" className={btnGhost} onClick={() => exportJSON(releve)}>
-                    Exporter JSON
-                  </button>
-                  <button type="button" className={btnGhost} onClick={() => exportCSV(releve)}>
-                    Exporter CSV
-                  </button>
-                </div>
-              </div>
+            {releve.reference || "Nouveau relevé"}
+            {view.kind === "module" && currentModule && (
+              <span className="ml-2 font-normal text-slate-400">· {currentModule.short}</span>
             )}
-          </div>
+          </button>
+          <span className={`text-xs ${saveState === "saved" ? "text-green-600" : "text-slate-400"}`}>
+            {saveState === "saving" ? "…" : saveState === "saved" ? "✓" : ""}
+          </span>
           <button type="button" className={btnGhost} onClick={() => setDark(!dark)} aria-label="Basculer le mode sombre">
             {dark ? "☀︎" : "☾"}
           </button>
         </div>
+        <PhaseStepper
+          activePhase={activePhase}
+          statuses={phaseStatuses}
+          onSelect={(p) => {
+            setActivePhase(p);
+            setView({ kind: "hub" });
+          }}
+        />
       </header>
 
-      <div className="mx-auto flex min-h-screen max-w-6xl pt-14">
-        <Sidebar
-          open={mobileSidebarOpen}
-          desktopExpanded={desktopSidebarExpanded}
-          onCloseMobile={() => setMobileSidebarOpen(false)}
-          activeSectionId={activeSectionId}
-          onSelectSection={selectSection}
-          progress={progress}
-        />
-
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-1 space-y-2 p-3 md:p-5">
-            {SECTIONS.map((section) => (
-              <div key={section.id} id={`section-${section.id}`} style={{ scrollMarginTop: 64 }}>
-                <CollapsibleSection
-                  title={`${section.num}. ${section.title}`}
-                  open={openSections[section.id] === true}
-                  started={progress[section.id] === "started"}
-                  onToggle={() => {
-                    setActiveSectionId(section.id);
-                    setOpenSections((prev) => ({ ...prev, [section.id]: !prev[section.id] }));
-                  }}
-                >
-                  {renderSection(section)}
-                </CollapsibleSection>
-              </div>
-            ))}
-          </div>
-
-          {/* Barre de statut */}
-          <div className="sticky bottom-0 border-t border-slate-900/10 bg-white/95 px-4 py-2 text-xs text-slate-600 backdrop-blur dark:border-slate-100/10 dark:bg-slate-900/95 dark:text-slate-300">
-            <span className={saveState === "saved" ? "text-green-600" : ""}>
-              {saveState === "saving" ? "Sauvegarde…" : saveState === "saved" ? "✓ Sauvegardé" : "—"}
-            </span>
-            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-            Aire totale : {totalArea.toLocaleString("fr-CA")} pi²
-            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-            {releve.rooms.length} pièce{releve.rooms.length > 1 ? "s" : ""}
-            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-            {releve.reference || "nouveau relevé"}
-          </div>
+      {view.kind === "hub" && (
+        <main className="mx-auto max-w-2xl p-3 md:p-5">
+          <ModuleHub
+            phase={activePhase}
+            releve={releve}
+            onOpen={(id) => {
+              const m = getModule(id);
+              if (m) openModule(m);
+            }}
+            onAnswerOptIn={answerOptIn}
+            onReactivate={reactivate}
+          />
         </main>
-      </div>
+      )}
+
+      {view.kind === "module" && currentModule && (
+        <main className="mx-auto max-w-3xl">
+          <ModuleScreen
+            module={currentModule}
+            releve={releve}
+            setFieldValue={setFieldValue}
+            updateReleve={updateReleve}
+            setMatrixValue={setMatrixValue}
+            setMatrixFloor={setMatrixFloor}
+            saveState={saveState}
+            prevLabel={prevModule ? prevModule.short : "Accueil"}
+            nextLabel={
+              nextModule
+                ? moduleStatus(nextModule, releve) === "todo"
+                  ? nextModule.short
+                  : nextModule.short
+                : "Accueil"
+            }
+            onPrev={() => (prevModule ? goto(prevModule.id) : goto(`hub:${currentModule.phase}`))}
+            onNext={() => (nextModule ? goto(nextModule.id) : goto(`hub:${currentModule.phase}`))}
+            review={{
+              onGoto: goto,
+              onMarkNa: (id) => setFieldValue(`module_na_${id}`, "oui"),
+            }}
+          />
+        </main>
+      )}
     </div>
   );
 }

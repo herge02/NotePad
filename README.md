@@ -19,62 +19,58 @@ npm run dev        # développement — http://localhost:3000
 npm run build && npm start   # production (le service worker hors ligne s'active en prod)
 ```
 
-## Interface
+## UX : flux guidé, divulgation progressive
 
-UI/UX inspirée de SPE-NotePad : barre du haut fixe, **sidebar de navigation
-repliable** (groupes → sections, pastilles de progression), canevas central où
-les 14 sections s'enchaînent en **sections repliables** (flow continu, on
-remplit de haut en bas), barre de statut en bas (sauvegarde, aire totale,
-pièces). Contrôles natifs compacts, grilles multi-colonnes, tableaux fins.
+Refonte complète documentée dans `docs/REFONTE-UX.md` (diagnostic, wireframes, spec) :
 
-## Organisation du formulaire
-
-Groupes → sections, du sol vers le haut :
-
-| Groupe | Sections |
-|---|---|
-| Dossier | 1. Dossier |
-| Bâtiment | 2. Identification · 3. Site & conformité · 4. Dimensions |
-| Structure & enveloppe | 5. Fondations · 6. Superstructure · 7. Enveloppe extérieure |
-| Intérieur | 8. Finition intérieure · 9. Relevé par pièce |
-| Systèmes & équipements | 10. Méc./élec./plomberie · 11. Équipements & protection incendie |
-| Extérieur | 12. Extérieur & aménagements |
-| Suivi | 13. Rénovations · 14. Résumé & export |
-
-Points clés :
-
-- Les **étages** définis en section 4 sont la source de vérité : toutes les matrices de
-  composition par étage (planchers, revêtements, finitions) se génèrent à partir d'eux,
-  et le module par pièce y rattache chaque pièce.
-- Les **matrices en pourcentage** valident 0–100 par champ et signalent toute somme
-  dépassant 100 % (dans la matrice et au résumé).
-- Le module **Relevé par pièce** génère ses champs selon le type de pièce
-  (`roomSchemas` dans le schéma) et réutilise les listes de revêtements de la section 8.
-- **Autosave** continu dans IndexedDB (repli localStorage), gestion de brouillons,
-  identifiant de relevé basé sur numéro de dossier + date.
-- **Export JSON et CSV** (UTF-8 avec BOM pour Excel) ; la structure aplatie est prête
-  pour un futur export PDF.
-- Photos par section et par pièce : prévues dans une version future.
+- **Mes relevés** : reprendre, créer, dupliquer, exporter un dossier (jauge de
+  complétude, badge d'anomalies).
+- **5 phases** (stepper permanent) : Identification → Site → Bâtiment →
+  Intérieur & systèmes → Extérieur & clôture du dossier.
+- **Hub de modules** par phase : cartes avec statut (`À faire / En cours /
+  Complet / Sans objet`), bouton **« Continuer → prochaine tâche »**, questions
+  **opt-in** (Piscine ? SPA ? Clôture ? Gicleurs ?…) qui ne déploient un module
+  qu'après « Oui », modules filtrés par **profil** (secteur/utilisation) et
+  réactivables.
+- **Écran de module = une tâche** : champs essentiels visibles, « Plus de
+  détails » replié, navigation Précédent/Suivant collée en bas, autosave.
+- **Listes « sélections d'abord »** : ce qui est coché + 8 chips fréquentes
+  (apprises de l'usage local) + recherche + « Voir tout » en panneau — fini
+  l'inventaire de 53 cases vides.
+- **Matrices par étage** : un étage à la fois (chips avec jauge), « Copier de
+  l'étage précédent », « 100 % », « Compléter à 100 % » ; somme > 100 % signalée
+  sans bloquer.
+- **Étages en cartes** avec préréglages (SS + RDC + 1 étage…), aire totale vivante.
+- **Pièces** : type en chips, aire auto L×P, revêtements en lignes-résumé
+  (sélecteur à la demande, listes DRY de la finition), « Enregistrer et +1 pièce »,
+  étage prérempli du dernier choix.
+- **Validation près du champ**, non bloquante (requis au blur, bornes numériques).
+- **Vérification** : uniquement anomalies, requis manquants, questions sans
+  réponse et modules jamais ouverts (acquittables « Sans objet »), totaux,
+  export JSON/CSV (averti, jamais interdit).
 
 ## Architecture
 
 ```
-src/lib/formSchema.ts        sections, champs, options, matrices, roomSchemas
-src/lib/types.ts             types du schéma et du modèle de données
-src/lib/fieldLogic.ts        visibilité conditionnelle, progression, sommes %
+src/lib/formSchema.ts        phases, modules (tier/optIn/visibleWhen), options, roomSchemas
+src/lib/types.ts             ModuleDef, FormField (tier, frequent, rememberLast), données
+src/lib/fieldLogic.ts        visibilité, statuts de modules, anomalies, prochaine tâche
+src/lib/lastUsed.ts          dernier choix utilisé + fréquence locale des options
 src/lib/storage.ts           IndexedDB + repli localStorage
 src/lib/export.ts            export JSON / CSV
-src/components/FormRenderer.tsx      rendu générique des champs (schema-driven)
-src/components/Sidebar.tsx           navigation groupes → sections, progression
-src/components/CollapsibleSection.tsx sections repliables animées (flow)
-src/components/ui.ts                 classes utilitaires partagées (style compact)
-src/components/PercentageMatrix.tsx  matrices par étage (recherche + %)
-src/components/FloorsTable.tsx       tableau d'étages (source des matrices)
-src/components/RoomList.tsx          module par pièce (ajout/duplication/réordonnancement)
-src/components/RepeatableList.tsx    rénovations
-src/components/SummarySection.tsx    résumé, alertes, export
-src/app/page.tsx             application principale (état, autosave, brouillons)
+src/components/FormRenderer.tsx   rendu générique des champs (schema-driven)
+src/components/QuickSelect.tsx    listes « sélections d'abord » + chips + panneau
+src/components/MatrixBlock.tsx    matrices par étage (copie, 100 %, jauges)
+src/components/FloorCards.tsx     étages en cartes + préréglages
+src/components/RoomList.tsx       relevé par pièce
+src/components/PhaseStepper.tsx   stepper 5 phases
+src/components/ModuleHub.tsx      cartes de modules, opt-in, sans objet
+src/components/ModuleScreen.tsx   écran une-tâche + navigation basse
+src/components/ReviewScreen.tsx   vérification & export
+src/components/ReleveList.tsx     écran « Mes relevés »
+src/app/page.tsx             orchestration (vues, autosave, duplication)
 ```
 
-Toute évolution du formulaire (nouvelle option de matériau, nouveau type de pièce,
-nouvelle section) se fait dans `formSchema.ts` — les composants s'adaptent.
+Toute évolution du formulaire (option, type de pièce, module, question opt-in,
+règle de profil) se fait dans `formSchema.ts` — les composants s'adaptent.
+Les ids de champs sont stables : les relevés existants restent lisibles.

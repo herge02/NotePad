@@ -1,11 +1,14 @@
 // Schéma du formulaire de relevé de bâtiment (valeur assurable / inspection).
-// Toutes les sections, champs, options et types de pièces sont définis ici —
-// aucune liste de matériaux n'est codée en dur dans les composants.
+// Architecture : 5 phases → modules (une tâche = un écran). Tous les champs,
+// options, niveaux de divulgation (tier), modules opt-in et filtres de profil
+// sont définis ici — rien n'est codé en dur dans les composants.
 //
 // Règle : on documente (matériaux, quantités, dimensions, présence/absence).
 // Aucun champ ne qualifie l'état ou la condition d'une composante.
+//
+// Les ids de champs sont stables (aucune migration de données nécessaire).
 
-import type { FormField, FormGroup, FormSection, RoomTypeDef } from "./types";
+import type { FormField, ModuleDef, PhaseDef, RoomTypeDef } from "./types";
 
 // ---------------------------------------------------------------------------
 // Listes partagées (DRY : réutilisées par la finition intérieure ET le module
@@ -89,51 +92,36 @@ export const RENOVATION_TYPES = [
   "Autre",
 ];
 
+/** valeur « Autre » utilisée dans les groupes d'options */
+export const OTHER_OPTION = "Autre";
+
 // ---------------------------------------------------------------------------
-// Groupes de navigation (macro-catégories)
+// Phases (stepper)
 // ---------------------------------------------------------------------------
 
-export const GROUPS: FormGroup[] = [
-  { id: "dossier", title: "Dossier" },
-  { id: "batiment", title: "Bâtiment" },
-  { id: "structure", title: "Structure & enveloppe" },
-  { id: "interieur", title: "Intérieur" },
-  { id: "systemes", title: "Systèmes & équipements" },
-  { id: "exterieur", title: "Extérieur" },
-  { id: "suivi", title: "Suivi" },
+export const PHASES: PhaseDef[] = [
+  { id: 1, title: "Identification", short: "Identification" },
+  { id: 2, title: "Site", short: "Site" },
+  { id: 3, title: "Bâtiment", short: "Bâtiment" },
+  { id: 4, title: "Intérieur & systèmes", short: "Intérieur" },
+  { id: 5, title: "Extérieur & clôture du dossier", short: "Extérieur" },
 ];
 
 // ---------------------------------------------------------------------------
-// Sections
+// Modules (ordre = ordre du flux de saisie)
 // ---------------------------------------------------------------------------
 
-export const SECTIONS: FormSection[] = [
-  // 1 — Dossier -------------------------------------------------------------
+export const MODULES: ModuleDef[] = [
+  // ── Phase 1 — Identification ─────────────────────────────────────────────
   {
-    id: "dossier",
-    num: 1,
-    title: "Dossier",
-    short: "Dossier",
-    group: "dossier",
+    id: "identification",
+    phase: 1,
+    title: "Identifier le dossier",
+    short: "Identification",
     fields: [
       { id: "no_dossier", label: "Numéro de dossier", type: "text", required: true },
       { id: "date_releve", label: "Date", type: "date", required: true },
-      { id: "inspecte_par", label: "Inspecté par", type: "text", required: true },
-      { id: "personnes_rencontrees", label: "Personnes rencontrées", type: "text" },
-      { id: "type_entreprise", label: "Type d'entreprise / propriété", type: "text" },
-      { id: "unites_visitees", label: "Unités visitées", type: "text" },
-      { id: "notes_generales", label: "Notes générales", type: "textarea" },
-    ],
-  },
-
-  // 2 — Identification du bâtiment ------------------------------------------
-  {
-    id: "identification",
-    num: 2,
-    title: "Identification du bâtiment",
-    short: "Identification",
-    group: "batiment",
-    fields: [
+      { id: "inspecte_par", label: "Inspecté par", type: "text", required: true, rememberLast: true },
       {
         id: "secteur",
         label: "Secteur",
@@ -164,29 +152,41 @@ export const SECTIONS: FormSection[] = [
           "Institutionnel",
         ],
       },
+      { id: "annee_construction", label: "Année de construction", type: "number", min: 1600, max: 2100 },
+      {
+        id: "annee_non_confirmee",
+        label: "Année non confirmée",
+        type: "checkbox",
+        showIf: { field: "annee_construction", truthy: true },
+      },
+      // — détails —
+      { id: "personnes_rencontrees", label: "Personnes rencontrées", type: "text", tier: "detail" },
+      { id: "type_entreprise", label: "Type d'entreprise / propriété", type: "text", tier: "detail" },
+      { id: "unites_visitees", label: "Unités visitées", type: "text", tier: "detail" },
       {
         id: "types_unites",
         label: "Types d'unités (avec quantités)",
         type: "quantity-list",
+        tier: "detail",
         options: ["Studio", "1½", "2½", "3½", "4½", "5½", "6½", "Penthouse"],
+        frequent: ["3½", "4½", "5½"],
         quantityLabel: "Nombre",
+        showIf: { field: "utilisation", notIn: ["Commerciale", "Industrielle", "Institutionnel"] },
       },
-      { id: "nb_logements", label: "Nombre de logements", type: "number", min: 0 },
-      { id: "nb_condominiums", label: "Nombre de condominiums", type: "number", min: 0 },
-      { id: "nb_commerces", label: "Nombre de commerces", type: "number", min: 0 },
-      { id: "annee_construction", label: "Année de construction", type: "number", min: 1600, max: 2100 },
-      { id: "annee_non_confirmee", label: "Année non confirmée", type: "yesno" },
-      { id: "important", label: "Important", type: "yesno" },
+      { id: "nb_logements", label: "Nombre de logements", type: "number", min: 0, tier: "detail" },
+      { id: "nb_condominiums", label: "Nombre de condominiums", type: "number", min: 0, tier: "detail" },
+      { id: "nb_commerces", label: "Nombre de commerces", type: "number", min: 0, tier: "detail" },
+      { id: "important", label: "Important", type: "yesno", tier: "detail" },
+      { id: "notes_generales", label: "Notes générales", type: "textarea", tier: "detail" },
     ],
   },
 
-  // 3 — Site, accès & conformité ---------------------------------------------
+  // ── Phase 2 — Site ───────────────────────────────────────────────────────
   {
     id: "site",
-    num: 3,
+    phase: 2,
     title: "Site, accès & conformité",
-    short: "Site & conformité",
-    group: "batiment",
+    short: "Site & accès",
     fields: [
       {
         id: "dist_borne_fontaine",
@@ -211,93 +211,108 @@ export const SECTIONS: FormSection[] = [
       },
       {
         id: "accessibilite",
-        label: "Accessibilité (logistique d'accès au site)",
+        label: "Accessibilité du site",
         type: "radio",
         options: ["Facile", "Moyenne", "Difficile"],
         other: true,
         help: "Logistique d'accès seulement — pas une évaluation d'état.",
       },
-      { id: "plans_architecte", label: "Accès plans architecte", type: "yesno" },
+      // — détails / rare —
+      { id: "plans_architecte", label: "Accès plans architecte", type: "yesno", tier: "detail" },
       {
         id: "plans_architecte_nom",
         label: "Nom de l'architecte",
         type: "text",
+        tier: "detail",
         showIf: { field: "plans_architecte", equals: "oui" },
       },
-      { id: "plans_ingenieur", label: "Accès plans ingénieur", type: "yesno" },
+      { id: "plans_ingenieur", label: "Accès plans ingénieur", type: "yesno", tier: "detail" },
       {
         id: "plans_ingenieur_nom",
         label: "Nom de l'ingénieur",
         type: "text",
+        tier: "detail",
         showIf: { field: "plans_ingenieur", equals: "oui" },
       },
-      { id: "plans_evacuation", label: "Accès plans d'évacuation", type: "yesno" },
-      { id: "avis_non_conformite", label: "Avis de non-conformité", type: "yesno" },
+      { id: "plans_evacuation", label: "Accès plans d'évacuation", type: "yesno", tier: "detail" },
+      { id: "avis_non_conformite", label: "Avis de non-conformité", type: "yesno", tier: "detail" },
       {
         id: "avis_non_conformite_batiment",
-        label: "Avis de non-conformité — bâtiment",
+        label: "Avis — bâtiment",
         type: "text",
+        tier: "detail",
         showIf: { field: "avis_non_conformite", equals: "oui" },
       },
       {
         id: "avis_non_conformite_reference",
-        label: "Avis de non-conformité — référence",
+        label: "Avis — référence",
         type: "text",
+        tier: "detail",
         showIf: { field: "avis_non_conformite", equals: "oui" },
       },
-      { id: "ordonnance_decontamination", label: "Ordonnance de décontamination", type: "yesno" },
+      { id: "ordonnance_decontamination", label: "Ordonnance de décontamination", type: "yesno", tier: "detail" },
       {
         id: "ordonnance_batiment",
         label: "Ordonnance — bâtiment",
         type: "text",
+        tier: "detail",
         showIf: { field: "ordonnance_decontamination", equals: "oui" },
       },
       {
         id: "ordonnance_reference",
         label: "Ordonnance — référence",
         type: "text",
+        tier: "detail",
         showIf: { field: "ordonnance_decontamination", equals: "oui" },
       },
       {
         id: "fiche_reference",
         label: "Consultation de la fiche de référence",
         type: "yesno",
+        tier: "detail",
         help: "Si oui : en demander copie ou photo.",
       },
     ],
   },
 
-  // 4 — Dimensions & superficies ---------------------------------------------
+  // ── Phase 3 — Bâtiment ───────────────────────────────────────────────────
   {
     id: "dimensions",
-    num: 4,
-    title: "Dimensions & superficies",
-    short: "Dimensions",
-    group: "batiment",
+    phase: 3,
+    title: "Étages du bâtiment",
+    short: "Étages",
     special: "floors",
+    help: "Les étages alimentent toutes les matrices et le relevé par pièce.",
     fields: [
-      { id: "nb_etages", label: "Nombre d'étages", type: "number", min: 0 },
-      { id: "largeur_batiment", label: "Largeur", type: "number", unit: "pi", min: 0 },
-      { id: "profondeur_batiment", label: "Profondeur", type: "number", unit: "pi", min: 0 },
-      { id: "dimensions_irregulieres", label: "Dimensions irrégulières / voir croquis", type: "yesno" },
-      { id: "aire_bureau", label: "Industriel — aire bureau", type: "number", unit: "pi²", min: 0 },
+      { id: "nb_etages", label: "Nombre d'étages", type: "number", min: 0, tier: "detail" },
+      { id: "largeur_batiment", label: "Largeur hors tout", type: "number", unit: "pi", min: 0, tier: "detail" },
+      { id: "profondeur_batiment", label: "Profondeur hors tout", type: "number", unit: "pi", min: 0, tier: "detail" },
+      { id: "dimensions_irregulieres", label: "Dimensions irrégulières / voir croquis", type: "yesno", tier: "detail" },
       {
-        id: "aire_totale_batiment_industriel",
-        label: "Industriel — aire totale bâtiment",
+        id: "aire_bureau",
+        label: "Aire bureau",
         type: "number",
         unit: "pi²",
         min: 0,
+        tier: "detail",
+        showIf: { field: "secteur", in: ["Industriel", "Para-industriel"] },
+      },
+      {
+        id: "aire_totale_batiment_industriel",
+        label: "Aire totale bâtiment (industriel)",
+        type: "number",
+        unit: "pi²",
+        min: 0,
+        tier: "detail",
+        showIf: { field: "secteur", in: ["Industriel", "Para-industriel"] },
       },
     ],
   },
-
-  // 5 — Fondations & infrastructure -------------------------------------------
   {
     id: "fondations",
-    num: 5,
+    phase: 3,
     title: "Fondations & infrastructure",
     short: "Fondations",
-    group: "structure",
     fields: [
       {
         id: "excavation",
@@ -327,18 +342,16 @@ export const SECTIONS: FormSection[] = [
           "Pieux d'enfoncement",
           "Colonnes stationnement souterrain",
         ],
+        frequent: ["Béton coulé", "Blocs de béton", "Béton armé"],
       },
-      { id: "fondations_notes", label: "Notes — fondations", type: "textarea" },
+      { id: "fondations_notes", label: "Notes — fondations", type: "textarea", tier: "detail" },
     ],
   },
-
-  // 6 — Superstructure ---------------------------------------------------------
   {
     id: "superstructure",
-    num: 6,
+    phase: 3,
     title: "Superstructure",
-    short: "Superstructure",
-    group: "structure",
+    short: "Structure",
     fields: [
       {
         id: "structure_batiment",
@@ -355,7 +368,6 @@ export const SECTIONS: FormSection[] = [
           "Acier léger",
           "Acier préfabriqué",
         ],
-        help: "La somme des pourcentages ne doit pas dépasser 100 %.",
       },
       {
         id: "murs_exterieurs",
@@ -372,19 +384,6 @@ export const SECTIONS: FormSection[] = [
           "Acier léger",
           "Acier préfabriqué",
         ],
-      },
-      {
-        id: "murs_mitoyens",
-        label: "Murs mitoyens",
-        type: "checkbox-group",
-        options: ["Bois", "Béton", "Blocs de béton", "Maçonnerie", "Aucun"],
-      },
-      {
-        id: "isolation",
-        label: "Isolation",
-        type: "radio",
-        options: ["Présumé standard", "Aucune", "Novoclimat"],
-        other: true,
       },
       { id: "toiture_pente_pct", label: "Toiture en pente (%)", type: "number", unit: "%", min: 0, max: 100 },
       {
@@ -408,11 +407,27 @@ export const SECTIONS: FormSection[] = [
           "Structure acier avec dalle béton",
         ],
       },
+      // — détails —
+      {
+        id: "murs_mitoyens",
+        label: "Murs mitoyens",
+        type: "checkbox-group",
+        tier: "detail",
+        options: ["Bois", "Béton", "Blocs de béton", "Maçonnerie", "Aucun"],
+      },
+      {
+        id: "isolation",
+        label: "Isolation",
+        type: "radio",
+        tier: "detail",
+        options: ["Présumé standard", "Aucune", "Novoclimat"],
+        other: true,
+      },
     ],
     matrices: [
       {
         id: "composition_planchers",
-        title: "Composition des planchers (par étage, %)",
+        title: "Composition des planchers",
         validateSum: true,
         other: true,
         options: [
@@ -432,18 +447,15 @@ export const SECTIONS: FormSection[] = [
       },
     ],
   },
-
-  // 7 — Enveloppe extérieure ---------------------------------------------------
   {
     id: "enveloppe",
-    num: 7,
+    phase: 3,
     title: "Enveloppe extérieure",
     short: "Enveloppe",
-    group: "structure",
     matrices: [
       {
         id: "revetement_murs",
-        title: "Revêtement des murs (par étage / zone, %)",
+        title: "Revêtement des murs",
         validateSum: true,
         other: true,
         options: [
@@ -493,6 +505,7 @@ export const SECTIONS: FormSection[] = [
           "Tuiles de plastique",
           "Toiture inversée",
         ],
+        frequent: ["Bardeaux d'asphalte", "Membrane élastomère", "Acier", "Goudron et gravier"],
       },
       {
         id: "fenetres",
@@ -514,11 +527,13 @@ export const SECTIONS: FormSection[] = [
         other: true,
         options: ["Acier", "Aluminium", "Verre thermos patio", "Bois"],
       },
+      // — détails —
       {
         id: "portes_garage",
         label: "Portes de garage",
         type: "checkbox-group",
         other: true,
+        tier: "detail",
         options: ["Bois", "Aluminium", "Ouvre-porte automatique", "Acier"],
       },
       {
@@ -526,36 +541,34 @@ export const SECTIONS: FormSection[] = [
         label: "Portes coulissantes",
         type: "checkbox-group",
         other: true,
+        tier: "detail",
         options: ["Bois", "Aluminium", "PVC", "Toiles", "Transparente", "À rouleaux"],
       },
     ],
   },
-
-  // 8 — Finition intérieure ------------------------------------------------------
   {
     id: "finition_interieure",
-    num: 8,
-    title: "Finition intérieure (par étage)",
-    short: "Finition int.",
-    group: "interieur",
+    phase: 3,
+    title: "Finition intérieure",
+    short: "Finitions",
     matrices: [
       {
         id: "finition_planchers",
-        title: "Finition des planchers (par étage, %)",
+        title: "Finition des planchers",
         validateSum: true,
         other: true,
         options: FLOOR_FINISH_OPTIONS,
       },
       {
         id: "finition_plafonds",
-        title: "Finition du plafond (par étage, %)",
+        title: "Finition du plafond",
         validateSum: true,
         other: true,
         options: CEILING_FINISH_OPTIONS,
       },
       {
         id: "finition_murs",
-        title: "Finition des murs et divisions (par étage, %)",
+        title: "Finition des murs et divisions",
         validateSum: true,
         other: true,
         options: WALL_FINISH_OPTIONS,
@@ -577,36 +590,33 @@ export const SECTIONS: FormSection[] = [
         max: 100,
         showIf: { field: "sous_sol_pourtour", equals: "Fini à %" },
       },
+      // — détails —
       {
         id: "composition_divisions",
         label: "Composition des divisions",
         type: "checkbox-group",
         other: true,
+        tier: "detail",
         options: ["Colombage bois", "Colombage métallique", "Blocs béton", "Béton", "Blocs de verre", "Vitrine"],
       },
-      { id: "finition_notes", label: "Notes — finition intérieure", type: "textarea" },
+      { id: "finition_notes", label: "Notes — finition intérieure", type: "textarea", tier: "detail" },
     ],
   },
 
-  // 9 — Relevé par pièce -----------------------------------------------------------
+  // ── Phase 4 — Intérieur & systèmes ───────────────────────────────────────
   {
     id: "pieces",
-    num: 9,
+    phase: 4,
     title: "Relevé par pièce",
     short: "Pièces",
-    group: "interieur",
     special: "rooms",
   },
-
-  // 10 — Mécanique, électricité & plomberie -----------------------------------------
   {
     id: "mecanique",
-    num: 10,
+    phase: 4,
     title: "Mécanique, électricité & plomberie",
     short: "Méc. / élec. / plomb.",
-    group: "systemes",
     fields: [
-      { id: "interrupteur_principal", label: "Interrupteur principal", type: "checkbox" },
       {
         id: "amperage",
         label: "Ampérage",
@@ -615,7 +625,7 @@ export const SECTIONS: FormSection[] = [
         other: true,
         unit: "A",
       },
-      { id: "voltage", label: "Voltage", type: "text", unit: "V" },
+      { id: "interrupteur_principal", label: "Interrupteur principal", type: "checkbox" },
       {
         id: "electricite_options",
         label: "Électricité",
@@ -633,53 +643,35 @@ export const SECTIONS: FormSection[] = [
       },
       {
         id: "chauffage",
-        label: "Chauffage (indiquer les étages desservis en note)",
+        label: "Chauffage",
         type: "quantity-list",
         withNote: true,
         quantityLabel: "Nb / %",
+        help: "Indiquer les étages desservis en note.",
         options: [
-          "Aérotherme vapeur",
+          "Plinthes électriques",
+          "Air chaud alimenté par",
+          "Thermopompe murale chauffage/climatisation",
+          "Thermopompe chauffage seulement",
+          "Plinthe eau chaude alimentée par",
+          "Radiant électrique",
+          "Radiant eau chaude alimenté par",
+          "Radiant suspendu",
+          "Ventilo-convecteur",
+          "Aérotherme électrique",
           "Aérotherme gaz naturel",
           "Aérotherme propane",
-          "Aérotherme électrique",
-          "Air chaud alimenté par",
-          "Ventilo-convecteur",
+          "Aérotherme vapeur",
           "Géothermie (profondeur du puits en note)",
-          "Plinthe eau chaude alimentée par",
-          "Plinthes électriques",
-          "Radiant eau chaude alimenté par",
-          "Radiant électrique",
-          "Radiant suspendu",
           "Solaire",
-          "Thermopompe chauffage seulement",
-          "Thermopompe murale chauffage/climatisation",
           "Unité refroidissement/chauffage combinés",
           "Aucun",
         ],
-      },
-      {
-        id: "climatisation",
-        label: "Climatisation",
-        type: "quantity-list",
-        options: [
-          "Air climatisé fenêtre",
-          "Thermopompe climatisation seulement",
-          "Unité de climatisation centrale",
-          "Unité murale",
-        ],
-      },
-      {
-        id: "ventilation",
-        label: "Ventilation",
-        type: "quantity-list",
-        options: [
-          "Échangeur d'air",
-          "Récupérateur de chaleur",
-          "Système de déshumidification",
-          "Trappe de ventilation",
-          "Ventilateurs de plafond",
-          "Ventilateurs d'évacuation",
-          "Humidification",
+        frequent: [
+          "Plinthes électriques",
+          "Air chaud alimenté par",
+          "Thermopompe murale chauffage/climatisation",
+          "Plinthe eau chaude alimentée par",
         ],
       },
       {
@@ -714,24 +706,54 @@ export const SECTIONS: FormSection[] = [
           "Tuyauterie seulement",
           "Urinoir",
         ],
+        frequent: [
+          "Toilette",
+          "Lavabo",
+          "Douche",
+          "Bain",
+          "Chauffe-eau",
+          "Évier de cuisine",
+          "Cuve de lavage",
+          "Sortie laveuse-sécheuse",
+        ],
+      },
+      // — détails —
+      { id: "voltage", label: "Voltage", type: "text", unit: "V", tier: "detail" },
+      {
+        id: "climatisation",
+        label: "Climatisation",
+        type: "quantity-list",
+        tier: "detail",
+        options: [
+          "Air climatisé fenêtre",
+          "Thermopompe climatisation seulement",
+          "Unité de climatisation centrale",
+          "Unité murale",
+        ],
       },
       {
-        id: "gicleurs",
-        label: "Gicleurs",
-        type: "checkbox-group",
-        options: ["Gicleurs air", "Gicleurs eau"],
+        id: "ventilation",
+        label: "Ventilation",
+        type: "quantity-list",
+        tier: "detail",
+        options: [
+          "Échangeur d'air",
+          "Récupérateur de chaleur",
+          "Système de déshumidification",
+          "Trappe de ventilation",
+          "Ventilateurs de plafond",
+          "Ventilateurs d'évacuation",
+          "Humidification",
+        ],
+        frequent: ["Échangeur d'air", "Ventilateurs d'évacuation"],
       },
-      { id: "gicleurs_notes", label: "Notes — gicleurs", type: "textarea" },
     ],
   },
-
-  // 11 — Équipements & protection incendie ---------------------------------------------
   {
-    id: "equipements",
-    num: 11,
-    title: "Équipements & protection incendie",
-    short: "Équipements",
-    group: "systemes",
+    id: "encastrements",
+    phase: 4,
+    title: "Encastrements & équipements",
+    short: "Encastrements",
     fields: [
       {
         id: "encastrements",
@@ -793,7 +815,58 @@ export const SECTIONS: FormSection[] = [
           "Système intercom",
           "Contrôle d'accès",
         ],
+        frequent: [
+          "Aspirateur central",
+          "Foyer bois",
+          "Lave-vaisselle encastré",
+          "Îlot central",
+          "Système d'alarme intrusion/feu",
+          "Puits de lumière",
+          "Moulures",
+          "Boiseries",
+        ],
       },
+    ],
+  },
+  {
+    id: "protection_incendie",
+    phase: 4,
+    title: "Protection incendie",
+    short: "Protection incendie",
+    fields: [
+      {
+        id: "protection_incendie",
+        label: "Protection incendie",
+        type: "quantity-list",
+        options: [
+          "Cabinet avec boyau d'arrosage",
+          "Déclencheur manuel",
+          "Détecteur de chaleur",
+          "Détecteurs de fumée",
+          "Extincteurs",
+          "Lumières d'urgence",
+          "Porte coupe-feu",
+          "Sirène",
+          "Sortie d'urgence",
+          "Système d'alarme incendie",
+          "Détecteur de monoxyde de carbone",
+        ],
+        frequent: [
+          "Détecteurs de fumée",
+          "Extincteurs",
+          "Détecteur de monoxyde de carbone",
+          "Lumières d'urgence",
+        ],
+      },
+    ],
+  },
+  {
+    id: "equipements_industriels",
+    phase: 4,
+    title: "Équipements fixes / industriels",
+    short: "Équip. industriels",
+    visibleWhen: { field: "secteur", in: ["Industriel", "Para-industriel", "Commercial"] },
+    fields: [
       {
         id: "equipements_industriels",
         label: "Équipements fixes / industriels",
@@ -815,38 +888,35 @@ export const SECTIONS: FormSection[] = [
           "Potence (portée en note)",
         ],
       },
+    ],
+  },
+  {
+    id: "gicleurs",
+    phase: 4,
+    title: "Gicleurs",
+    short: "Gicleurs",
+    optIn: { question: "Système de gicleurs ?", fieldId: "gicleurs_presents" },
+    fields: [
       {
-        id: "protection_incendie",
-        label: "Protection incendie",
-        type: "quantity-list",
-        options: [
-          "Cabinet avec boyau d'arrosage",
-          "Déclencheur manuel",
-          "Détecteur de chaleur",
-          "Détecteurs de fumée",
-          "Extincteurs",
-          "Lumières d'urgence",
-          "Porte coupe-feu",
-          "Sirène",
-          "Sortie d'urgence",
-          "Système d'alarme incendie",
-          "Détecteur de monoxyde de carbone",
-        ],
+        id: "gicleurs",
+        label: "Type de gicleurs",
+        type: "checkbox-group",
+        options: ["Gicleurs air", "Gicleurs eau"],
       },
+      { id: "gicleurs_notes", label: "Notes — gicleurs", type: "textarea", tier: "detail" },
     ],
   },
 
-  // 12 — Extérieur & aménagements ---------------------------------------------------------
+  // ── Phase 5 — Extérieur & clôture du dossier ─────────────────────────────
   {
-    id: "exterieur",
-    num: 12,
-    title: "Extérieur & aménagements",
-    short: "Extérieur",
-    group: "exterieur",
+    id: "exterieur_divers",
+    phase: 5,
+    title: "Divers extérieur",
+    short: "Divers ext.",
     fields: [
       {
         id: "divers_exterieur",
-        label: "Divers extérieur",
+        label: "Éléments extérieurs",
         type: "quantity-list",
         withNote: true,
         options: [
@@ -888,7 +958,25 @@ export const SECTIONS: FormSection[] = [
           "Toits de galerie",
           "Verrière",
         ],
+        frequent: [
+          "Balcon en",
+          "Galerie en",
+          "Gouttières et descentes (longueur en note)",
+          "Perrons de béton",
+          "Patios en",
+          "Remises annexées",
+          "Escalier extérieur en",
+          "Auvent (grandeur en note)",
+        ],
       },
+    ],
+  },
+  {
+    id: "amenagements",
+    phase: 5,
+    title: "Aménagements de terrain",
+    short: "Aménagements",
+    fields: [
       {
         id: "amenagements",
         label: "Aménagements (longueur / largeur / aire)",
@@ -902,6 +990,14 @@ export const SECTIONS: FormSection[] = [
         withNote: true,
         options: ["Arbres", "Haie"],
       },
+    ],
+  },
+  {
+    id: "services",
+    phase: 5,
+    title: "Services & signalisation",
+    short: "Services",
+    fields: [
       { id: "services_municipaux", label: "Services municipaux", type: "yesno" },
       { id: "puits", label: "Puits", type: "checkbox" },
       {
@@ -912,46 +1008,56 @@ export const SECTIONS: FormSection[] = [
         other: true,
       },
       { id: "champ_epuration", label: "Champ d'épuration", type: "checkbox" },
-      { id: "enseigne_sur_pied", label: "Enseigne sur pied", type: "checkbox" },
+      // — détails —
+      { id: "enseigne_sur_pied", label: "Enseigne sur pied", type: "checkbox", tier: "detail" },
       {
         id: "enseigne_grandeur",
         label: "Enseigne — grandeur",
         type: "text",
+        tier: "detail",
         showIf: { field: "enseigne_sur_pied", equals: true },
       },
       {
         id: "enseigne_hauteur_poteau",
         label: "Enseigne — hauteur du poteau",
         type: "text",
+        tier: "detail",
         showIf: { field: "enseigne_sur_pied", equals: true },
       },
-      { id: "lampadaires_quantite", label: "Lampadaires — quantité", type: "number", min: 0 },
+      { id: "lampadaires_quantite", label: "Lampadaires — quantité", type: "number", min: 0, tier: "detail" },
       {
         id: "lampadaires_hauteur",
         label: "Lampadaires — hauteur",
         type: "number",
         unit: "pi",
         min: 0,
+        tier: "detail",
         showIf: { field: "lampadaires_quantite", truthy: true },
       },
       {
         id: "lampadaires_nb_lumieres",
-        label: "Lampadaires — nombre de lumières",
+        label: "Lampadaires — nb de lumières",
         type: "number",
         min: 0,
+        tier: "detail",
         showIf: { field: "lampadaires_quantite", truthy: true },
       },
-      { id: "pancarte_contreplaque", label: "Pancarte en contreplaqué", type: "checkbox" },
-      { id: "poteaux", label: "Poteaux", type: "checkbox" },
-
-      // Piscine ------------------------------------------------------------
-      { id: "piscine", label: "Piscine", type: "yesno" },
+      { id: "pancarte_contreplaque", label: "Pancarte en contreplaqué", type: "checkbox", tier: "detail" },
+      { id: "poteaux", label: "Poteaux", type: "checkbox", tier: "detail" },
+    ],
+  },
+  {
+    id: "piscine",
+    phase: 5,
+    title: "Piscine",
+    short: "Piscine",
+    optIn: { question: "Piscine ?", fieldId: "piscine" },
+    fields: [
       {
         id: "piscine_type",
         label: "Type de piscine",
         type: "radio",
         options: ["Creusée", "Hors-terre"],
-        showIf: { field: "piscine", equals: "oui" },
       },
       {
         id: "piscine_parois_creusee",
@@ -986,31 +1092,15 @@ export const SECTIONS: FormSection[] = [
           "Ovale 18×33",
         ],
         other: true,
-        showIf: { field: "piscine", equals: "oui" },
       },
-      {
-        id: "piscine_quantite",
-        label: "Piscines — quantité",
-        type: "number",
-        min: 0,
-        showIf: { field: "piscine", equals: "oui" },
-      },
-      {
-        id: "piscine_eclairage",
-        label: "Piscine — éclairage",
-        type: "checkbox",
-        showIf: { field: "piscine", equals: "oui" },
-      },
-      {
-        id: "piscine_glissoire",
-        label: "Piscine — glissoire",
-        type: "checkbox",
-        showIf: { field: "piscine", equals: "oui" },
-      },
+      { id: "piscine_quantite", label: "Quantité", type: "number", min: 0 },
+      { id: "piscine_eclairage", label: "Éclairage", type: "checkbox" },
+      { id: "piscine_glissoire", label: "Glissoire", type: "checkbox" },
       {
         id: "chauffage_piscine",
         label: "Chauffage piscine",
         type: "checkbox-group",
+        tier: "detail",
         options: [
           "Thermopompe 70–85 MBH",
           "Thermopompe 107–140 MBH",
@@ -1020,94 +1110,90 @@ export const SECTIONS: FormSection[] = [
           "Chauffe-eau huile",
           "Chauffe-eau bois",
         ],
-        showIf: { field: "piscine", equals: "oui" },
       },
-
-      // SPA ------------------------------------------------------------------
-      { id: "spa", label: "SPA", type: "yesno" },
-      {
-        id: "spa_places",
-        label: "SPA — nombre de places",
-        type: "number",
-        min: 0,
-        showIf: { field: "spa", equals: "oui" },
-      },
+    ],
+  },
+  {
+    id: "spa",
+    phase: 5,
+    title: "SPA",
+    short: "SPA",
+    optIn: { question: "SPA ?", fieldId: "spa" },
+    fields: [
+      { id: "spa_places", label: "Nombre de places", type: "number", min: 0 },
       {
         id: "spa_niveau",
-        label: "SPA — niveau (classification du produit)",
+        label: "Niveau (classification du produit)",
         type: "radio",
         options: ["Normal", "Standard", "Supérieur"],
-        showIf: { field: "spa", equals: "oui" },
         help: "Classification du produit, pas une évaluation d'état.",
       },
-
-      // Clôture ----------------------------------------------------------------
+    ],
+  },
+  {
+    id: "cloture",
+    phase: 5,
+    title: "Clôture",
+    short: "Clôture",
+    optIn: { question: "Clôture ?", fieldId: "cloture_presente" },
+    fields: [
       {
         id: "cloture_type",
-        label: "Clôture — type",
+        label: "Type",
         type: "checkbox-group",
         options: ["Bois", "Mailles de chaîne", "Fer forgé", "PVC"],
         other: true,
       },
       {
         id: "cloture_hauteur",
-        label: "Clôture — hauteur",
+        label: "Hauteur",
         type: "select",
         options: ["4 pi", "5 pi", "6 pi"],
         other: true,
-        showIf: { field: "cloture_type", truthy: true },
       },
-      {
-        id: "cloture_longueur",
-        label: "Clôture — longueur",
-        type: "number",
-        unit: "pi",
-        min: 0,
-        showIf: { field: "cloture_type", truthy: true },
-      },
-
-      // Murs de soutènement ------------------------------------------------------
-      { id: "soutenement_longueur", label: "Murs de soutènement — longueur", type: "number", unit: "pi", min: 0 },
-      { id: "soutenement_largeur", label: "Murs de soutènement — largeur", type: "number", unit: "pi", min: 0 },
-      { id: "soutenement_aire", label: "Murs de soutènement — aire", type: "number", unit: "pi²", min: 0 },
-      { id: "soutenement_quantite", label: "Murs de soutènement — quantité", type: "number", min: 0 },
-
-      // Foyer extérieur -------------------------------------------------------------
-      { id: "foyer_exterieur", label: "Foyer extérieur", type: "yesno" },
-      {
-        id: "foyer_exterieur_notes",
-        label: "Foyer extérieur — notes",
-        type: "textarea",
-        showIf: { field: "foyer_exterieur", equals: "oui" },
-      },
+      { id: "cloture_longueur", label: "Longueur", type: "number", unit: "pi", min: 0 },
     ],
   },
-
-  // 13 — Rénovations ---------------------------------------------------------------------
+  {
+    id: "soutenement",
+    phase: 5,
+    title: "Murs de soutènement",
+    short: "Soutènement",
+    optIn: { question: "Murs de soutènement ?", fieldId: "soutenement_present" },
+    fields: [
+      { id: "soutenement_longueur", label: "Longueur", type: "number", unit: "pi", min: 0 },
+      { id: "soutenement_largeur", label: "Largeur", type: "number", unit: "pi", min: 0 },
+      { id: "soutenement_aire", label: "Aire", type: "number", unit: "pi²", min: 0 },
+      { id: "soutenement_quantite", label: "Quantité", type: "number", min: 0 },
+    ],
+  },
+  {
+    id: "foyer_ext",
+    phase: 5,
+    title: "Foyer extérieur",
+    short: "Foyer ext.",
+    optIn: { question: "Foyer extérieur ?", fieldId: "foyer_exterieur" },
+    fields: [{ id: "foyer_exterieur_notes", label: "Notes", type: "textarea" }],
+  },
   {
     id: "renovations",
-    num: 13,
+    phase: 5,
     title: "Rénovations",
     short: "Rénovations",
-    group: "suivi",
     special: "renovations",
   },
-
-  // 14 — Résumé & export --------------------------------------------------------------------
   {
-    id: "resume",
-    num: 14,
-    title: "Résumé & export",
-    short: "Résumé",
-    group: "suivi",
+    id: "verification",
+    phase: 5,
+    title: "Vérification & export",
+    short: "Vérification",
     special: "summary",
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Relevé par pièce : types de pièces et champs spécifiques
-// (les revêtements plancher/mur/plafond communs réutilisent les listes de la
-// section 8 — voir RoomList)
+// Relevé par pièce : types de pièces (ordre = fréquence d'usage) et champs
+// spécifiques. Les revêtements communs réutilisent les listes de finition.
 // ---------------------------------------------------------------------------
 
 export const ROOM_SCHEMAS: RoomTypeDef[] = [
@@ -1139,7 +1225,7 @@ export const ROOM_SCHEMAS: RoomTypeDef[] = [
         showIf: { field: "ilot_central", equals: "oui" },
       },
       { id: "evier_type", label: "Évier", type: "radio", options: ["Simple", "Double"] },
-      { id: "evier_materiau", label: "Évier — matériau", type: "text" },
+      { id: "evier_materiau", label: "Évier — matériau", type: "text", tier: "detail" },
       {
         id: "encastres",
         label: "Encastrés",
@@ -1154,6 +1240,7 @@ export const ROOM_SCHEMAS: RoomTypeDef[] = [
           "Micro-ondes encastré",
           "Réfrigérateur encastré",
         ],
+        frequent: ["Lave-vaisselle", "Hotte (longueur en note)", "Four encastré"],
       },
       { id: "garde_manger", label: "Garde-manger", type: "checkbox" },
     ],
@@ -1183,16 +1270,16 @@ export const ROOM_SCHEMAS: RoomTypeDef[] = [
       },
       { id: "toilette_quantite", label: "Toilettes — quantité", type: "number", min: 0 },
       { id: "vanite_quantite", label: "Vanités — quantité", type: "number", min: 0 },
-      { id: "vanite_longueur", label: "Vanités — longueur", type: "text" },
+      { id: "vanite_longueur", label: "Vanités — longueur", type: "text", tier: "detail" },
       {
         id: "lavabo",
         label: "Lavabo",
         type: "checkbox-group",
         options: ["Sur pied", "Mural", "Encastré", "Vasque"],
       },
-      { id: "bidet", label: "Bidet", type: "checkbox" },
-      { id: "plancher_chauffant", label: "Plancher chauffant", type: "yesno" },
-      { id: "ventilateur_evacuation", label: "Ventilateur d'évacuation", type: "checkbox" },
+      { id: "bidet", label: "Bidet", type: "checkbox", tier: "detail" },
+      { id: "plancher_chauffant", label: "Plancher chauffant", type: "yesno", tier: "detail" },
+      { id: "ventilateur_evacuation", label: "Ventilateur d'évacuation", type: "checkbox", tier: "detail" },
     ],
   },
   {
@@ -1239,7 +1326,14 @@ export const ROOM_SCHEMAS: RoomTypeDef[] = [
         id: "foyer_poele",
         label: "Foyer / poêle",
         type: "checkbox-group",
-        options: ["Foyer bois", "Foyer gaz naturel", "Foyer propane", "Foyer électrique", "Poêle à bois", "Poêle à combustion lente"],
+        options: [
+          "Foyer bois",
+          "Foyer gaz naturel",
+          "Foyer propane",
+          "Foyer électrique",
+          "Poêle à bois",
+          "Poêle à combustion lente",
+        ],
       },
       { id: "bar", label: "Bar", type: "yesno" },
       {
@@ -1322,13 +1416,39 @@ export function getRoomSchema(typeId: string): RoomTypeDef | undefined {
   return ROOM_SCHEMAS.find((r) => r.id === typeId);
 }
 
-export function getSection(id: string): FormSection | undefined {
-  return SECTIONS.find((s) => s.id === id);
+export function getModule(id: string): ModuleDef | undefined {
+  return MODULES.find((m) => m.id === id);
 }
 
-export function sectionsOfGroup(groupId: string): FormSection[] {
-  return SECTIONS.filter((s) => s.group === groupId);
+export function modulesOfPhase(phase: number): ModuleDef[] {
+  return MODULES.filter((m) => m.phase === phase);
 }
 
-/** valeur « Autre » utilisée dans les groupes d'options */
-export const OTHER_OPTION = "Autre";
+/** préréglages d'étages proposés quand la liste est vide */
+export const FLOOR_PRESETS: { label: string; floors: { type: string; label: string }[] }[] = [
+  { label: "RDC seul", floors: [{ type: "Rez-de-chaussée", label: "Rez-de-chaussée" }] },
+  {
+    label: "SS + RDC",
+    floors: [
+      { type: "Sous-sol", label: "Sous-sol" },
+      { type: "Rez-de-chaussée", label: "Rez-de-chaussée" },
+    ],
+  },
+  {
+    label: "SS + RDC + 1 étage",
+    floors: [
+      { type: "Sous-sol", label: "Sous-sol" },
+      { type: "Rez-de-chaussée", label: "Rez-de-chaussée" },
+      { type: "Étage", label: "2e étage" },
+    ],
+  },
+  {
+    label: "SS + RDC + 2 étages",
+    floors: [
+      { type: "Sous-sol", label: "Sous-sol" },
+      { type: "Rez-de-chaussée", label: "Rez-de-chaussée" },
+      { type: "Étage", label: "2e étage" },
+      { type: "Étage", label: "3e étage" },
+    ],
+  },
+];

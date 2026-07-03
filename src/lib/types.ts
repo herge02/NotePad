@@ -25,7 +25,14 @@ export interface ShowIf {
   includes?: string;
   /** champ simplement non vide */
   truthy?: boolean;
+  /** la valeur doit être dans cette liste */
+  in?: unknown[];
+  /** la valeur ne doit pas être dans cette liste (non saisi = visible) */
+  notIn?: unknown[];
 }
+
+/** niveaux de divulgation : essentiel visible, détail à 1 tap, avancé caché */
+export type FieldTier = "essential" | "detail" | "advanced";
 
 export interface FormField {
   id: string;
@@ -53,6 +60,12 @@ export interface FormField {
   noQuantity?: boolean;
   required?: boolean;
   help?: string;
+  /** niveau de divulgation (défaut : essential) */
+  tier?: FieldTier;
+  /** options proposées en chips rapides (listes longues) */
+  frequent?: string[];
+  /** préremplir avec la dernière valeur saisie (nouveau relevé) */
+  rememberLast?: boolean;
 }
 
 /** Matrice de composition par étage (options × étages, valeurs en %) */
@@ -68,21 +81,32 @@ export interface MatrixDef {
 
 export type SpecialSection = "floors" | "rooms" | "renovations" | "summary";
 
-export interface FormSection {
-  id: string;
-  num: number;
+export type Phase = 1 | 2 | 3 | 4 | 5;
+
+export interface PhaseDef {
+  id: Phase;
   title: string;
   short: string;
-  group: string;
+}
+
+/** Un module = une tâche = un écran de saisie. */
+export interface ModuleDef {
+  id: string;
+  phase: Phase;
+  /** titre = la tâche (« Étages du bâtiment ») */
+  title: string;
+  short: string;
+  /** module opt-in : n'existe qu'après réponse « oui » à la question */
+  optIn?: { question: string; fieldId: string };
+  /** filtrage par profil (secteur / utilisation) — réactivable via « Ajouter » */
+  visibleWhen?: ShowIf;
   fields?: FormField[];
   matrices?: MatrixDef[];
   special?: SpecialSection;
+  help?: string;
 }
 
-export interface FormGroup {
-  id: string;
-  title: string;
-}
+export type ModuleStatus = "todo" | "in-progress" | "done" | "na";
 
 // ---------------------------------------------------------------------------
 // Données saisies

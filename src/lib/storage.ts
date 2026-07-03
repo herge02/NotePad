@@ -69,6 +69,34 @@ export async function loadReleve(id: string): Promise<ReleveData | undefined> {
   return raw ? (JSON.parse(raw) as ReleveData) : undefined;
 }
 
+/** charge tous les relevés (pour l'écran « Mes relevés » : jauge, anomalies) */
+export async function listRelevesFull(): Promise<ReleveData[]> {
+  const all: ReleveData[] = [];
+  if (hasIndexedDB()) {
+    try {
+      const rows = await tx<ReleveData[]>("readonly", (s) => s.getAll() as IDBRequest<ReleveData[]>);
+      all.push(...rows);
+    } catch {
+      // repli localStorage ci-dessous
+    }
+  }
+  if (typeof localStorage !== "undefined") {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(LS_PREFIX)) {
+        try {
+          const r = JSON.parse(localStorage.getItem(key)!) as ReleveData;
+          if (!all.some((x) => x.id === r.id)) all.push(r);
+        } catch {
+          // entrée corrompue : ignorée
+        }
+      }
+    }
+  }
+  all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return all;
+}
+
 export async function listReleves(): Promise<ReleveMeta[]> {
   const metas: ReleveMeta[] = [];
   if (hasIndexedDB()) {

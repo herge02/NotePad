@@ -1,20 +1,17 @@
 "use client";
 
-// Rend une liste de champs à partir du schéma — style compact (SPE-NotePad) :
-// contrôles natifs, petites bordures, disposition en grille deux colonnes.
-// Les champs « larges » (listes, matrices, textarea) occupent toute la largeur.
+// Rend une liste de champs à partir du schéma — compact, tactile, avec
+// divulgation progressive : les listes longues passent par QuickSelect
+// (sélections d'abord), la validation des requis se fait près du champ,
+// sans jamais bloquer la saisie.
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import QuickSelect from "./QuickSelect";
 import { OTHER_OPTION } from "@/lib/formSchema";
 import { isVisible, percentageSum } from "@/lib/fieldLogic";
-import { checkCls, helpCls, inputCls, inputSmCls, labelCls } from "./ui";
-import type {
-  DimsItem,
-  FieldValue,
-  FormField,
-  MeasureValue,
-  QuantityItem,
-} from "@/lib/types";
+import { setLast } from "@/lib/lastUsed";
+import { checkCls, helpCls, inputCls, inputSmCls, labelCls, segCls } from "./ui";
+import type { FieldValue, FormField, MeasureValue } from "@/lib/types";
 
 export interface FormRendererProps {
   fields: FormField[];
@@ -42,6 +39,12 @@ function FieldLabel({ field }: { field: FormField }) {
       {field.help && <p className={helpCls}>{field.help}</p>}
     </div>
   );
+}
+
+function RequiredHint({ field, values, touched }: { field: FormField; values: Record<string, FieldValue>; touched: boolean }) {
+  const empty = values[field.id] === undefined || values[field.id] === "";
+  if (!field.required || !touched || !empty) return null;
+  return <p className="mt-0.5 text-xs text-amber-600">Champ requis</p>;
 }
 
 function OtherPrecision({
@@ -104,24 +107,16 @@ function YesNoField({ field, values, onChange }: FormRendererProps & { field: Fo
   return (
     <div>
       <FieldLabel field={field} />
-      <div className="flex gap-4">
+      <div className="inline-flex">
         {(["oui", "non"] as const).map((opt) => (
-          <label
+          <button
             key={opt}
-            className="flex min-h-[32px] cursor-pointer items-center gap-1.5 text-sm capitalize text-slate-700 dark:text-slate-300"
+            type="button"
+            className={segCls(value === opt) + " capitalize"}
+            onClick={() => onChange(field.id, value === opt ? undefined : opt)}
           >
-            <input
-              type="radio"
-              name={field.id}
-              className={checkCls}
-              checked={value === opt}
-              onChange={() => onChange(field.id, opt)}
-              onClick={() => {
-                if (value === opt) onChange(field.id, undefined);
-              }}
-            />
             {opt}
-          </label>
+          </button>
         ))}
       </div>
     </div>
@@ -129,17 +124,21 @@ function YesNoField({ field, values, onChange }: FormRendererProps & { field: Fo
 }
 
 function CheckboxGroupField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
-  const options = field.other ? [...(field.options ?? []), OTHER_OPTION] : field.options ?? [];
+  const baseOptions = field.options ?? [];
   const value = (values[field.id] as string[]) ?? [];
-  const [search, setSearch] = useState("");
-  const searchable = options.length > 10;
-  const shown = useMemo(
-    () =>
-      search
-        ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()) || value.includes(o))
-        : options,
-    [options, search, value]
-  );
+  // listes longues : sélections d'abord (QuickSelect)
+  if (baseOptions.length > 10) {
+    return (
+      <div>
+        <FieldLabel field={field} />
+        <QuickSelect field={field} value={values[field.id]} onChange={(v) => onChange(field.id, v)} />
+        {field.other && value.includes(OTHER_OPTION) && (
+          <OtherPrecision fieldId={field.id} values={values} onChange={onChange} />
+        )}
+      </div>
+    );
+  }
+  const options = field.other ? [...baseOptions, OTHER_OPTION] : baseOptions;
   const toggle = (opt: string) => {
     const next = value.includes(opt) ? value.filter((v) => v !== opt) : [...value, opt];
     onChange(field.id, next.length ? next : undefined);
@@ -147,17 +146,8 @@ function CheckboxGroupField({ field, values, onChange }: FormRendererProps & { f
   return (
     <div>
       <FieldLabel field={field} />
-      {searchable && (
-        <input
-          type="search"
-          className={`${inputSmCls} mb-2 w-full max-w-xs`}
-          placeholder="Rechercher…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      )}
       <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-        {shown.map((opt) => (
+        {options.map((opt) => (
           <label
             key={opt}
             className="flex min-h-[32px] cursor-pointer items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300"
@@ -200,6 +190,11 @@ function SelectField({ field, values, onChange }: FormRendererProps & { field: F
 
 function NumberField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
   const value = values[field.id];
+  const [touched, setTouched] = useState(false);
+  const num = value === undefined || value === null ? undefined : Number(value);
+  const outOfRange =
+    num !== undefined &&
+    ((field.min !== undefined && num < field.min) || (field.max !== undefined && num > field.max));
   return (
     <div>
       <FieldLabel field={field} />
@@ -207,21 +202,29 @@ function NumberField({ field, values, onChange }: FormRendererProps & { field: F
         <input
           type="number"
           inputMode="decimal"
-          className={inputCls}
+          className={inputCls + (outOfRange ? " !border-amber-500" : "")}
           min={field.min}
           max={field.max}
           step={field.step ?? "any"}
           value={value === undefined || value === null ? "" : String(value)}
+          onBlur={() => setTouched(true)}
           onChange={(e) => onChange(field.id, e.target.value === "" ? undefined : Number(e.target.value))}
         />
         {field.unit && <span className="whitespace-nowrap text-xs text-slate-500">{field.unit}</span>}
       </div>
+      {outOfRange && (
+        <p className="mt-0.5 text-xs text-amber-600">
+          Vérifiez la valeur ({field.min ?? "…"}–{field.max ?? "…"})
+        </p>
+      )}
+      <RequiredHint field={field} values={values} touched={touched} />
     </div>
   );
 }
 
 function TextField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
   const value = (values[field.id] as string) ?? "";
+  const [touched, setTouched] = useState(false);
   return (
     <div>
       <FieldLabel field={field} />
@@ -231,10 +234,12 @@ function TextField({ field, values, onChange }: FormRendererProps & { field: For
           className={inputCls}
           placeholder={field.placeholder}
           value={value}
+          onBlur={() => setTouched(true)}
           onChange={(e) => onChange(field.id, e.target.value || undefined)}
         />
         {field.unit && <span className="text-xs text-slate-500">{field.unit}</span>}
       </div>
+      <RequiredHint field={field} values={values} touched={touched} />
     </div>
   );
 }
@@ -312,144 +317,6 @@ function MeasureField({ field, values, onChange }: FormRendererProps & { field: 
   );
 }
 
-function QuantityListField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
-  const options = field.other ? [...(field.options ?? []), OTHER_OPTION] : field.options ?? [];
-  const value = (values[field.id] as Record<string, QuantityItem>) ?? {};
-  const [search, setSearch] = useState("");
-  const searchable = options.length > 10;
-  const isOn = (opt: string) => value[opt]?.checked === true;
-  const shown = search
-    ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()) || isOn(o))
-    : options;
-  const update = (opt: string, patch: Partial<QuantityItem>) => {
-    const current = value[opt] ?? { checked: false };
-    onChange(field.id, { ...value, [opt]: { ...current, ...patch } });
-  };
-  return (
-    <div>
-      <FieldLabel field={field} />
-      {searchable && (
-        <input
-          type="search"
-          className={`${inputSmCls} mb-2 w-full max-w-xs`}
-          placeholder="Rechercher…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      )}
-      <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 lg:grid-cols-2">
-        {shown.map((opt) => {
-          const item = value[opt];
-          const on = item?.checked === true;
-          return (
-            <div key={opt} className="flex min-h-[34px] items-center gap-1.5 py-0.5">
-              <input
-                type="checkbox"
-                className={checkCls}
-                checked={on}
-                onChange={(e) => update(opt, { checked: e.target.checked })}
-                aria-label={opt}
-              />
-              <button
-                type="button"
-                className="flex-1 truncate text-left text-sm text-slate-700 dark:text-slate-300"
-                onClick={() => update(opt, { checked: !on })}
-              >
-                {opt}
-              </button>
-              {on && !field.noQuantity && (
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  className={`${inputSmCls} w-16 text-right`}
-                  placeholder={field.quantityLabel ?? "Qté"}
-                  value={item?.quantity ?? ""}
-                  onChange={(e) => update(opt, { quantity: e.target.value || undefined })}
-                />
-              )}
-              {on && (field.withNote || opt === OTHER_OPTION) && (
-                <input
-                  type="text"
-                  className={`${inputSmCls} w-36 sm:w-44`}
-                  placeholder={opt === OTHER_OPTION ? "Précisez…" : "Note"}
-                  value={item?.note ?? ""}
-                  onChange={(e) => update(opt, { note: e.target.value || undefined })}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function DimsListField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
-  const options = field.options ?? [];
-  const value = (values[field.id] as Record<string, DimsItem>) ?? {};
-  const update = (opt: string, patch: Partial<DimsItem>) => {
-    const current = value[opt] ?? { checked: false };
-    onChange(field.id, { ...value, [opt]: { ...current, ...patch } });
-  };
-  return (
-    <div>
-      <FieldLabel field={field} />
-      <div className="space-y-0.5">
-        {options.map((opt) => {
-          const item = value[opt];
-          const on = item?.checked === true;
-          return (
-            <div key={opt} className="flex min-h-[34px] flex-wrap items-center gap-1.5 py-0.5">
-              <input
-                type="checkbox"
-                className={checkCls}
-                checked={on}
-                onChange={(e) => update(opt, { checked: e.target.checked })}
-                aria-label={opt}
-              />
-              <button
-                type="button"
-                className="min-w-[130px] flex-1 truncate text-left text-sm text-slate-700 dark:text-slate-300"
-                onClick={() => update(opt, { checked: !on })}
-              >
-                {opt}
-              </button>
-              {on && (
-                <>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className={`${inputSmCls} w-20`}
-                    placeholder="Long."
-                    value={item?.length ?? ""}
-                    onChange={(e) => update(opt, { length: e.target.value || undefined })}
-                  />
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className={`${inputSmCls} w-20`}
-                    placeholder="Larg."
-                    value={item?.width ?? ""}
-                    onChange={(e) => update(opt, { width: e.target.value || undefined })}
-                  />
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className={`${inputSmCls} w-20`}
-                    placeholder="Aire"
-                    value={item?.area ?? ""}
-                    onChange={(e) => update(opt, { area: e.target.value || undefined })}
-                  />
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function PercentageGroupField({ field, values, onChange }: FormRendererProps & { field: FormField }) {
   const options = field.other ? [...(field.options ?? []), OTHER_OPTION] : field.options ?? [];
   const value = (values[field.id] as Record<string, number>) ?? {};
@@ -463,31 +330,72 @@ function PercentageGroupField({ field, values, onChange }: FormRendererProps & {
     }
     onChange(field.id, Object.keys(next).length ? next : undefined);
   };
+  // sélections d'abord : seules les options saisies + un ajout à la demande
+  const selected = options.filter((o) => value[o] !== undefined);
+  const [adding, setAdding] = useState(false);
+  const available = options.filter((o) => value[o] === undefined);
   return (
     <div>
       <FieldLabel field={field} />
-      <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-        {options.map((opt) => (
-          <div key={opt} className="flex min-h-[34px] items-center justify-between gap-2 py-0.5">
-            <span className="truncate text-sm text-slate-700 dark:text-slate-300">{opt}</span>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={100}
-                className={`${inputSmCls} w-16 text-right`}
-                value={value[opt] ?? ""}
-                onChange={(e) => update(opt, e.target.value)}
-              />
-              <span className="text-xs text-slate-400">%</span>
+      {selected.length > 0 && (
+        <div className="mb-1.5 space-y-0.5">
+          {selected.map((opt) => (
+            <div key={opt} className="flex min-h-[36px] items-center justify-between gap-2">
+              <span className="truncate text-sm text-slate-700 dark:text-slate-300">{opt}</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={100}
+                  className={`${inputSmCls} w-16 text-right`}
+                  value={value[opt] ?? ""}
+                  onChange={(e) => update(opt, e.target.value)}
+                />
+                <span className="text-xs text-slate-400">%</span>
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded-md text-sm text-red-600"
+                  onClick={() => update(opt, "")}
+                  aria-label={`Retirer ${opt}`}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      <p className={`mt-1 text-xs font-medium ${sum > 100 ? "text-red-600" : "text-slate-500"}`}>
-        Total : {sum} %{sum > 100 && " — dépasse 100 %"}
-      </p>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div className="flex flex-wrap gap-1.5">
+          {available.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              className="min-h-[36px] rounded-full border border-slate-300 px-3 text-sm text-slate-700 dark:border-slate-600 dark:text-slate-200"
+              onClick={() => {
+                update(opt, selected.length === 0 ? "100" : "0");
+                setAdding(false);
+              }}
+            >
+              + {opt}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="min-h-[36px] rounded-md px-2 text-sm text-blue-600"
+          onClick={() => setAdding(true)}
+        >
+          + Ajouter{selected.length === 0 ? " (1er choix = 100 %)" : ""}
+        </button>
+      )}
+      {selected.length > 0 && (
+        <p className={`mt-1 text-xs font-medium ${sum > 100 ? "text-red-600" : "text-slate-500"}`}>
+          Total : {sum} %{sum > 100 && " — dépasse 100 %"}
+        </p>
+      )}
     </div>
   );
 }
@@ -501,7 +409,13 @@ export default function FormRenderer({ fields, values, onChange }: FormRendererP
     <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
       {fields.map((field) => {
         if (!isVisible(field, values)) return null;
-        const props = { field, fields, values, onChange };
+        const handleChange: FormRendererProps["onChange"] = (fid, v) => {
+          if (fid === field.id && field.rememberLast && typeof v === "string" && v) {
+            setLast(field.id, v);
+          }
+          onChange(fid, v);
+        };
+        const props = { field, fields, values, onChange: handleChange };
         let node: React.ReactNode;
         switch (field.type) {
           case "radio":
@@ -529,10 +443,17 @@ export default function FormRenderer({ fields, values, onChange }: FormRendererP
             node = <MeasureField {...props} />;
             break;
           case "quantity-list":
-            node = <QuantityListField {...props} />;
-            break;
           case "dims-list":
-            node = <DimsListField {...props} />;
+            node = (
+              <div>
+                <FieldLabel field={field} />
+                <QuickSelect
+                  field={field}
+                  value={values[field.id]}
+                  onChange={(v) => handleChange(field.id, v)}
+                />
+              </div>
+            );
             break;
           case "percentage-group":
             node = <PercentageGroupField {...props} />;
